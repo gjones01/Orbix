@@ -1,2 +1,14 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Vendored binary assets must never be line-ending converted.
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# Third-party bundles are committed verbatim; do not normalise their line endings.
+components/globe/frontend/vendor/** -text
+

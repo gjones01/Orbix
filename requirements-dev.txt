@@ -1,2 +1,7 @@
 # Development / test tooling for Orbix (not required to run the app).
 pytest>=8,<10
+
+# Optional: drives a real browser for scripts/smoke_test_ui.py, which verifies that
+# the 3D globe actually renders. Needs a Chrome or Edge installation.
+selenium>=4.20,<5
+requests>=2.31,<3
