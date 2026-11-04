@@ -79,7 +79,7 @@ verified work rather than by an impressive-looking shell.
 | Insights and summaries displayed in Streamlit | Summary panels grounded in the user's filtered satellite set | 2 | Deferred (Phase 2) |
 | LLM integration used meaningfully | Assistant receives the *actual* propagated figures (selected satellite, altitude, velocity, period, element age) and explains them, answers "where is X right now / over which region", and produces mission summaries | 3 | Deferred (Phase 3). No LLM code exists yet, by design |
 | Streamlit app: clean interface | Dark aerospace mission-control theme driven by `.streamlit/config.toml` plus a custom CSS layer; custom HTML panels instead of default widgets; Streamlit's own chrome hidden | 1 | **Done** (Step D) |
-| Streamlit app: user interaction with data | Rotate/zoom 3D Earth, hover readouts, click-to-select event back to Python, data-source toggles | 1 | **Done for one satellite** (Step D); time playback and multi-satellite selection in Steps E-F |
+| Streamlit app: user interaction with data | Rotate/zoom 3D Earth with ~12k satellites, hover identification, click-to-select by NORAD ID, local group filtering, browser-side simulation playback (play/pause/speed/reset/slider) | 1 | **Done** (Steps D–F) |
 | Streamlit app: displays EDA results | EDA panel built in Phase 2 | 2 | Deferred (Phase 2) |
 | Streamlit app: LLM integrated in the app | Chat/summary panel built in Phase 3 | 3 | Deferred (Phase 3) |
 | Streamlit app: error handling, documentation, user guidance | Typed exceptions surfaced as styled notices with actionable advice, explicit LIVE/CACHED/SNAPSHOT provenance chip, offline mode, loading veil, sidebar explanation of the data and propagation chain | 1 | **Done** (Step D) |

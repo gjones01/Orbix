@@ -233,9 +233,103 @@ a pinned CDN is a single point of failure at demo time; a failed `globe.gl.min.j
 would leave an empty box. `*.jpg`/`*.png` are marked `binary` in `.gitattributes` so
 line-ending normalisation cannot corrupt them.
 
+## D16 — Vectorised batch propagation for constellations
+
+**Decision.** Constellation scenes use `src/orbital/batch.py` (direct `sgp4` with
+NumPy), not the per-object Skyfield path. The Skyfield path remains the reference for
+single satellites and for the cross-check tests.
+
+**Evidence (measured, 11,958 objects):**
+
+| Path | Cost | 11,958 × 24 samples |
+|---|---|---|
+| Skyfield, one object at a time | ~244 µs/state | ~70 s |
+| `sgp4_array`, one call per object | ~1 µs/state | ~0.35 s |
+
+Building the 11,958 `Satrec` models costs 0.12 s; a full 20-minute window (41
+keyframes for 777 objects) loads in **0.05 s**, and all 11,958 in **0.38 s**.
+
+**Correctness.** The batch path rotates TEME→ECEF with the same IAU-82 GMST
+expression used by the independent Step C check, and takes UT1−UTC from Skyfield's
+timescale rather than assuming UT1 = UTC. Measured disagreement with the verified
+Skyfield pipeline: **0.3 m** in ECEF and 0.0 m in altitude across a sample of the
+catalogue; tests assert < 1 km.
+
+## D17 — A batched Points layer, chosen from measurements
+
+**Decision.** Satellites are drawn as one `THREE.Points` geometry with a custom
+shader; globe.gl's own point layer is not used for the constellation.
+
+**Evidence (headless Chrome, SwiftShader software rendering, so a real GPU is faster):**
+
+| Approach | Points | Static | Animating every frame | Draw calls |
+|---|---|---|---|---|
+| globe.gl points, unmerged | 3,000 | 239 fps | 48 fps | 3,000 |
+| globe.gl points, unmerged | 11,958 | 189 fps | **19.7 fps** | 11,958 |
+| Batched `THREE.Points` | 11,958 | — | **78 fps** (benchmark page) | 3 |
+| Batched in the app | 11,958 | — | **52.6 fps**, 1.39 ms/frame | 3 |
+
+The measurement changed the design: an object-per-satellite approach *looks* fine
+when static and collapses when animated, which is exactly what playback needs.
+
+**Consequence.** Globe.gl bundles three.js r171 but does not expose it, so the same
+revision is vendored and imported as an ES module; objects created with it are
+interchangeable with globe.gl's scene graph (verified to the pixel: our
+lat/lng→globe-space conversion projects to the same screen point as globe.gl's own
+`getScreenCoords`). Picking is a `Raycaster` with a threshold derived from the camera
+distance, giving a constant ~10 px pick radius at any zoom.
+
+## D18 — Adaptive keyframes: accuracy target first, payload budget second
+
+**Decision.** `plan_window()` samples finely enough to keep linear-interpolation error
+≤ 1 km, then coarsens only if `satellites × keyframes` would exceed ~2 MB of base64.
+Keyframes ship as base64 `Float32` (4 bytes/number) and are omitted from reruns whose
+scene fingerprint is unchanged.
+
+**Evidence.** For 777 satellites the planner returns 41 keyframes over 20 min (every
+30 s, 1.0 km error) and a 596 KB payload; a selection rerun without keyframes is
+97 KB. For 11,958 satellites it returns 10 keyframes (every 2.2 min, 19.2 km error)
+and 3.3 MB. Shipping 30-second sampling for 12k objects would be ~13 MB and would
+stall the browser.
+
+**Consequence.** The interpolation error is computed (`r·(1−cos(ωΔt/2))` for the
+fastest period in the catalogue) and displayed in both the globe HUD and the Streamlit
+panel. Accuracy degrades visibly rather than silently, and filtering to fewer
+constellations restores fine sampling.
+
 ---
 
-## Known limitations (as of end of Step D)
+## Known limitations (as of end of Step F)
+
+1. **Playback sampling is a trade-off, and it is displayed.** At 12k satellites a
+   20-minute window is sampled every ~2.2 min, giving ~19 km of interpolation error at
+   the midpoint between keyframes. Flight-dynamics work would use the propagator at
+   every instant; a browser animation cannot. Filtering to fewer constellations (or
+   choosing a shorter window) tightens it to ~1 km.
+2. **Interpolation is linear in geodetic space**, not a great-circle arc. The quoted
+   error is the resulting chord error; it is not corrected.
+3. **Starlink is off by default.** 11,181 of the 11,958 objects are Starlink; enabling
+   it multiplies the payload by ~6 and coarsens sampling. It is a checkbox, not a
+   hidden cap.
+4. **Marker size is not to scale.** Positions and altitudes are exact; the dot radius
+   is constant on screen so that a 400 km satellite is findable at planetary zoom.
+5. **Hover picking is CPU ray-casting** over the whole point cloud, throttled to
+   ~22 Hz. At 12k that is ~1–2 ms per pick, which is fine here but would need GPU
+   picking (an ID buffer) at 100k objects.
+6. **No terminator/day-night shading** (the texture is a fully sunlit composite), and
+   no eclipse or sunlight modelling.
+7. **Elements are hours old**, so this is a planning/education view, not live tracking.
+   Element age is shown for the selection and the scene reports skipped stale sets.
+8. **A few records are genuinely odd**: ~70 objects below 300 km (decaying) and 23
+   near 35,800 km (GEO weather). They are plotted where SGP4 puts them; the dataset is
+   not filtered to look tidy.
+9. **WebGL was verified with software rendering** (SwiftShader). Frame rates on a real
+   GPU were not measured; relative comparisons between approaches remain valid.
+10. **Category colours wash out at small marker sizes** because of additive blending;
+    they read best when zoomed in or filtered. Cosmetic, deferred by the brief.
+11. **Streamlit DOM selectors** are used by the CSS for chrome hiding; if Streamlit
+    renames its `data-testid`s the app still works but looks less bespoke.
+12. **No EDA, no LLM.** Deliberate phase gating; see `docs/assignment_requirements.md` §3.
 
 1. **One satellite, no playback.** Step D is ISS-only and shows a single instant;
    the sidebar says so. Time scrubbing, multi-object selection and group switching are

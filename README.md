@@ -12,13 +12,15 @@ Orbix is a solo final project for the *Masters of Data Science — Programming f
 Data Science* capstone. The assignment mapping (what is required, what each phase
 delivers) lives in [`docs/assignment_requirements.md`](docs/assignment_requirements.md).
 
-> **Current status: Phase 1, Step D complete.** Real CelesTrak data (Step B),
-> Skyfield/SGP4 propagation to labelled coordinate frames (Step C), and an
-> interactive Globe.gl Earth in Streamlit showing the ISS with its orbit track and
-> a mission-control information panel (Step D) all work. **109 tests** pass, and the
-> globe is verified in a headless browser. See the [Roadmap](#roadmap).
+> **Current status: Phase 1, Steps A–F complete.** Real CelesTrak data (B), SGP4
+> propagation in labelled frames (C), an interactive 3D Earth (D) and now a
+> **multi-constellation explorer** (E–F): five groups de-duplicated to ~11,958 unique
+> satellites, one batched WebGL layer, group filtering, click-to-select with orbit
+> trails, and browser-side simulation playback. **108 tests** pass and the globe is
+> verified in a headless browser (11,958 satellites at ~53 fps, software rendering).
+> See the [Roadmap](#roadmap).
 >
-> ![Orbix running locally](docs/screenshots/step-d-globe.png)
+> ![Orbix constellation view](docs/screenshots/step-e-constellation.png)
 
 ---
 
@@ -184,7 +186,74 @@ does not read secrets from `.env` for data access and never hardcodes keys.
 
 ---
 
-## Running the application
+## Constellation explorer
+
+| Group | CelesTrak id | Objects |
+|---|---|---|
+| Space stations | `stations` | 20 |
+| GPS | `gps-ops` | 32 |
+| Weather | `weather` | 74 |
+| OneWeb | `oneweb` | 651 |
+| Starlink | `starlink` | 11,181 |
+| **Unique total** | de-duplicated by NORAD ID | **11,958** |
+
+Groups are loaded **once per group** (never per satellite), de-duplicated by NORAD
+catalog ID, and an object that appears in several groups keeps every membership.
+A group that fails is reported as *failed* in the sidebar with its error; Orbix never
+substitutes one group for another. Starlink is off by default because it is ~10× the
+rest of the catalogue.
+
+### Rendering
+
+All satellites are drawn as one `THREE.Points` geometry with a small custom shader:
+a solid core plus a soft halo, category colour per vertex, size clamped so markers stay
+sensible at any zoom, and additive blending kept below 1.0 so colours do not clip to
+white. That is **one draw call** for the whole catalogue.
+
+globe.gl's own point layer was measured first and could not animate the full set: at
+11,958 points it rendered 189 fps static but only **19.7 fps when animated**. The
+batched layer does **52–78 fps** animating the same set (software WebGL, so a real GPU
+is faster). The measurements are in `docs/technical_decisions.md` (D17).
+
+### Selection and filtering
+
+* **Hover** ray-casts against the point cloud (throttled to ~22 Hz) and shows name,
+  NORAD ID, constellation, altitude and inclination.
+* **Click** selects by NORAD ID: the marker grows and turns white, its orbit trail is
+  drawn for one full period, the on-globe panel updates, and the selection is sent to
+  Python through the component bridge so the Streamlit panel updates too. Selection is
+  kept in `st.session_state`, so it survives ordinary interactions.
+* **Filtering** happens inside the iframe against the real sidebar checkboxes: no data
+  is re-requested and no Streamlit rerun occurs. The HUD shows
+  `visible / total` plus live fps and per-frame update cost.
+
+### Simulation playback
+
+The window (10/20/45/90 min, centred on now) is sampled once in Python. Playback runs
+entirely in the browser: Play/Pause, 10×–900× speed, Reset, and a scrub slider, with
+the simulation UTC clock shown in the bar.
+
+Positions are **linearly interpolated between SGP4 keyframes**, so different orbital
+periods, inclinations and planes are all respected — this is not a shared rotation.
+
+Sampling density is chosen from two constraints and the resulting error is always
+displayed:
+
+| Constraint | Effect |
+|---|---|
+| Accuracy | sample finely enough that the chord error stays ≤ 1 km |
+| Payload budget | coarsen if `satellites × keyframes` would exceed ~2 MB of base64 |
+
+For the 777-satellite default that is 41 keyframes over 20 min (every 30 s, error
+≈ 1.0 km). For all 11,958 satellites it is 10 keyframes over 20 min (every 2.2 min,
+error ≈ 19 km) — the HUD and the Streamlit panel both state the number, so the
+trade-off is never silent. Filtering to fewer constellations restores fine sampling.
+
+Re-running the whole app (e.g. after a selection) does **not** re-ship the keyframes:
+the payload carries a scene fingerprint and omits them when the scene is unchanged,
+which is why a light rerun is ~97 KB instead of ~596 KB.
+
+---
 
 From the repository root, with dependencies installed (see Setup above):
 
