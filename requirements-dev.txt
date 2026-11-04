@@ -1,0 +1,2 @@
+# Development / test tooling for Orbix (not required to run the app).
+pytest>=8,<10

@@ -1,0 +1,37 @@
+# ---- Python -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.pytest_tmp/
+
+# ---- Virtual environments ----------------------------------------------
+.venv/
+venv/
+env/
+
+# ---- Secrets and local config ------------------------------------------
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# ---- Orbix caches -------------------------------------------------------
+# Downloaded CelesTrak payloads are retained when they are small enough to be
+# useful as committed, reproducible fixtures (ISS + small groups).  Bulk groups
+# are large, change every 2 hours, and must not bloat the repository.
+data/snapshots/group-active_*.json
+data/snapshots/group-starlink_*.json
+data/snapshots/group-last-30-days_*.json
+data/snapshots/group-visual_*.json
+data/snapshots/*.json.tmp
+
+# ---- Tooling / OS -------------------------------------------------------
+.poc_out.txt
+.poc_err.txt
+.idea/
+.vscode/
+*.log
+Thumbs.db
+desktop.ini
+.DS_Store
