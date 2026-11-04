@@ -20,6 +20,7 @@ env/
 # Skyfield downloads IERS Earth-orientation data here when builtin time tables
 # are disabled. Never commit it.
 finals2000A.all*
+data/cache/
 
 # Downloaded CelesTrak payloads are retained when they are small enough to be
 # useful as committed, reproducible fixtures (ISS + small groups).  Bulk groups

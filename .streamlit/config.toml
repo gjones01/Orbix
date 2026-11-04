@@ -1,0 +1,17 @@
+# Orbix Streamlit configuration.
+# Dark aerospace theme matching the 3D globe. No secrets belong in this file.
+
+[theme]
+base = "dark"
+primaryColor = "#58b6ff"
+backgroundColor = "#04060b"
+secondaryBackgroundColor = "#0b111b"
+textColor = "#dbe6f2"
+font = "sans serif"
+
+[server]
+headless = true
+fileWatcherType = "auto"
+
+[browser]
+gatherUsageStats = false
