@@ -84,11 +84,25 @@ return {
   simTime: o.simTime ? o.simTime.toISOString() : null,
   drawnCalls: o.state.globe ? o.state.globe.renderer().info.render.calls : null,
   vertex0: o.layer ? Array.from(o.layer.positions.slice(0, 3)) : null,
+  paths: o.state.globe ? o.state.globe.pathsData().length : 0,
+  pathPoints: (o.state.globe && o.state.globe.pathsData()[0])
+      ? o.state.globe.pathsData()[0].points.length : 0,
+  tNorm: o.state.tNorm,
+  clock: (document.getElementById('sim-clock') || {}).textContent,
+  rangeLabel: (document.getElementById('window-range') || {}).textContent,
+  resourceCount: performance.getEntriesByType('resource').length,
   selectedName: (document.getElementById('selected-name') || {}).textContent,
   statusHidden: (document.getElementById('status') || {}).classList
       ? document.getElementById('status').classList.contains('hidden') : null,
 };
 """
+
+
+def _snapshot_state(directory: Path) -> dict[str, int]:
+    """name -> size for the committed CelesTrak snapshots."""
+    if not directory.exists():
+        return {}
+    return {p.name: p.stat().st_size for p in sorted(directory.glob("*.json"))}
 
 
 def run_browser_checks(url: str, timeout: float, settle: float, headful: bool,
@@ -195,32 +209,99 @@ def _interaction_checks(driver, initial: dict, report: dict, failures: list[str]
 
     # --- selection -------------------------------------------------------- #
     driver.execute_script("window.__orbix.select(5);")
-    time.sleep(0.3)
+    # The trail arrives with the payload on the Streamlit rerun that the click
+    # triggers, so poll for it rather than assuming it is instantaneous.
+    deadline = time.time() + 20
     selected = driver.execute_script(PROBE)
+    while time.time() < deadline and not selected.get("paths"):
+        time.sleep(0.5)
+        selected = driver.execute_script(PROBE)
     report["selected"] = {
         "index": selected["selection"],
         "norad_id": selected["selectedId"],
         "panel": selected["selectedName"],
+        "paths": selected["paths"],
+        "path_points": selected["pathPoints"],
     }
     if selected["selection"] != 5:
         failures.append("selecting index 5 did not update the layer selection")
     if selected["selectedName"] in (None, "", "click a satellite"):
         failures.append("the selection panel was not updated")
+    # The selected satellite must get its full orbital-period trail (~93 min -> 121 pts).
+    if selected["paths"] < 1:
+        failures.append("no orbit trail was drawn for the selected satellite")
+    elif selected["pathPoints"] < 100:
+        failures.append(
+            f"selected trail looks truncated ({selected['pathPoints']} points)")
 
     # --- playback --------------------------------------------------------- #
+    snapshots_before = _snapshot_state(REPO_ROOT / "data" / "snapshots")
     before = selected["vertex0"]
     sim_before = selected["simTime"]
+    resources_before = selected["resourceCount"]
+
     driver.execute_script("window.__orbix.setPlaying(true);")
-    time.sleep(2.0)
+    time.sleep(2.5)
     playing = driver.execute_script(PROBE)
     driver.execute_script("window.__orbix.setPlaying(false);")
-    report["playing"] = {"simTime": playing["simTime"], "moved": playing["vertex0"] != before}
+    report["playing"] = {
+        "sim_before": sim_before,
+        "sim_after": playing["simTime"],
+        "moved": playing["vertex0"] != before,
+    }
     if not playing["playing"]:
         failures.append("playback did not start")
     if playing["simTime"] == sim_before:
         failures.append("the simulation clock did not advance")
     if playing["vertex0"] == before:
         failures.append("satellite positions did not move during playback")
+
+    # Playback must not reach the network or trigger a Streamlit rerun: no new
+    # resources loaded in the page, and no new CelesTrak snapshot written.
+    if playing["resourceCount"] != resources_before:
+        failures.append(
+            f"playback loaded {playing['resourceCount'] - resources_before} new "
+            "resource(s); it should be purely client-side")
+    snapshots_after = _snapshot_state(REPO_ROOT / "data" / "snapshots")
+    new_snapshots = sorted(set(snapshots_after) - set(snapshots_before))
+    report["api_quiet"] = {
+        "new_resources": playing["resourceCount"] - resources_before,
+        "new_snapshots": new_snapshots,
+    }
+    if new_snapshots:
+        failures.append(f"playback wrote new snapshots: {new_snapshots}")
+
+    # --- reset ------------------------------------------------------------ #
+    driver.execute_script("window.__orbix.setTime(0.6);")
+    time.sleep(0.3)
+    advanced = driver.execute_script(PROBE)
+    driver.execute_script("document.getElementById('reset-button').click();")
+    time.sleep(0.4)
+    reset = driver.execute_script(PROBE)
+    report["reset"] = {
+        "tNorm_before": advanced["tNorm"],
+        "tNorm_after": reset["tNorm"],
+        "back_to_start": reset["vertex0"] == before,
+        "clock": reset["clock"],
+    }
+    if advanced["tNorm"] <= 0.0:
+        failures.append("scrubbing the slider did not move the simulation")
+    if reset["tNorm"] != 0.0:
+        failures.append(f"reset left tNorm at {reset['tNorm']}")
+    if reset["vertex0"] != before:
+        failures.append("reset did not restore the initial positions")
+
+    # --- window labelling (forward-only) ---------------------------------- #
+    report["window"] = {
+        "range_label": reset["rangeLabel"],
+        "clock_at_start": reset["clock"],
+        "sim_at_start": reset["simTime"],
+    }
+    if not reset["rangeLabel"]:
+        failures.append("the playback range label is empty")
+    if reset["rangeLabel"] and "+" not in reset["rangeLabel"]:
+        failures.append(f"range label does not show a forward range: {reset['rangeLabel']}")
+
 
     # --- performance ------------------------------------------------------ #
     time.sleep(0.6)
@@ -267,6 +348,9 @@ def main(argv: list[str] | None = None) -> int:
             "filtered": report.get("filtered"),
             "selected": report.get("selected"),
             "playing": report.get("playing"),
+            "api_quiet": report.get("api_quiet"),
+            "reset": report.get("reset"),
+            "window": report.get("window"),
             "perf": report.get("perf"),
             "severeErrors": report.get("severeErrors"),
         }

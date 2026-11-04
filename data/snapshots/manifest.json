@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-04T20:57:53Z",
+  "generated_at": "2026-11-04T22:26:11Z",
   "snapshots": [
     {
       "cache_key": "catnr-25544",
@@ -79,6 +79,19 @@
       "record_count": 11181,
       "newest_epoch": "2026-11-04T16:28:17.952960Z",
       "sha256": "c3c92aced250f5ef47e063d9f5a7b3dac47be86e248ee6eca7decd3d162586e9"
+    },
+    {
+      "cache_key": "group-stations",
+      "query": {
+        "GROUP": "STATIONS"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=STATIONS&FORMAT=JSON",
+      "filename": "group-stations_20261104T222611Z.json",
+      "retrieved_at": "2026-11-04T22:26:11Z",
+      "http_status": 200,
+      "record_count": 19,
+      "newest_epoch": "2026-11-04T08:52:07.404096Z",
+      "sha256": "adbd98a213fd1bb060ab0e9b71268a41936b8287c5a3d020fa8e60c35d8895f1"
     }
   ]
 }

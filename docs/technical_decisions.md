@@ -297,6 +297,39 @@ fastest period in the catalogue) and displayed in both the globe HUD and the Str
 panel. Accuracy degrades visibly rather than silently, and filtering to fewer
 constellations restores fine sampling.
 
+## D19 — Playback is anchored at load time and runs forward
+
+**Decision.** The playback window starts at the instant the scene is built (now, UTC)
+and extends forward by the selected width (10/20/45/90 min). The simulation opens on
+the window start, `Reset` returns to it, and `Play` advances into the future. Orbix is
+labelled as an *orbital prediction* view, never live tracking.
+
+**Rationale.** The first implementation centred the window on now, so pressing Play
+began 10 minutes in the past with nothing on screen saying so. A forward-only window
+matches what "Play" implies (watch what happens next) and makes the start instant
+meaningful.
+
+**Consequence.** The stale-element guard now uses the *far* end of the window
+(`max(|start−epoch|, |end−epoch|)`), because playback can reach 90 minutes beyond the
+anchor. A window change re-anchors to the new now and resets `tNorm` to 0; a
+selection-only rerun deliberately does not (it would jump the simulation).
+
+## D20 — Selection needs one extra rerun, and a "null means no news" rule
+
+**Decision.** When the component returns a selection, `app.py` stores it and calls
+`st.rerun()`; on the front-end, a *null* `payload.selection` on an unchanged scene is
+ignored rather than treated as a deselect.
+
+**Evidence.** The payload is built before the component is called, so the run that
+receives a click still carries the *previous* selection - the selected satellite's
+trail therefore arrived one interaction late. Treating the resulting null as a
+deselect made the highlight flicker off and back on.
+
+**Consequence.** Click → trail in one extra cheap rerun (~97 KB, keyframes omitted);
+the highlight never flickers; repeated events cannot loop because the JS only sends a
+given NORAD ID once and the Python side only reruns when the value actually changes.
+Verified in the browser: selection yields 2 path objects with 121 points.
+
 ---
 
 ## Known limitations (as of end of Step F)
