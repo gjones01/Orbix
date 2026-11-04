@@ -12,11 +12,13 @@ Orbix is a solo final project for the *Masters of Data Science — Programming f
 Data Science* capstone. The assignment mapping (what is required, what each phase
 delivers) lives in [`docs/assignment_requirements.md`](docs/assignment_requirements.md).
 
-> **Current status: Phase 1, Step C complete.** Real CelesTrak data acquisition,
-> caching and snapshotting (Step B) plus Skyfield/SGP4 propagation to WGS-84
-> geodetic, Earth-fixed (ECEF) and inertial (GCRS) coordinates (Step C) are
-> implemented and tested (**83 tests**). The 3D interface is next; see
-> [Roadmap](#roadmap).
+> **Current status: Phase 1, Step D complete.** Real CelesTrak data (Step B),
+> Skyfield/SGP4 propagation to labelled coordinate frames (Step C), and an
+> interactive Globe.gl Earth in Streamlit showing the ISS with its orbit track and
+> a mission-control information panel (Step D) all work. **109 tests** pass, and the
+> globe is verified in a headless browser. See the [Roadmap](#roadmap).
+>
+> ![Orbix running locally](docs/screenshots/step-d-globe.png)
 
 ---
 
@@ -160,33 +162,6 @@ is opt-in), and no JPL ephemeris download is required.
 
 ---
 
-## Repository layout
-
-
-```text
-Orbix/
-├── app.py                          # Streamlit entry point (Step D)
-├── src/
-│   ├── api/celestrak.py            # CelesTrak GP/OMM client, cache, snapshots
-│   ├── orbital/propagation.py      # SGP4 -> geodetic/ECEF/GCRS positions
-│   └── data/processing.py          # element cleaning / tabular prep (later)
-├── components/globe/               # Three.js / Globe.gl front-end (Step D)
-├── scripts/
-│   ├── verify_celestrak_api.py     # Step B acceptance check (CLI)
-│   └── verify_propagation.py       # Step C acceptance check (CLI)
-├── tests/                          # pytest suite + real-data fixtures
-├── data/snapshots/                 # saved CelesTrak payloads + manifest.json
-├── docs/
-│   ├── assignment_requirements.md  # requirement → feature mapping
-│   └── technical_decisions.md      # decisions, evidence, limitations
-├── requirements.txt
-├── requirements-dev.txt
-├── pytest.ini
-└── README.md
-```
-
----
-
 ## Setup
 
 Requires **Python 3.11+** (verified on 3.13.5).
@@ -206,6 +181,153 @@ pip install -r requirements.txt
 
 No API keys or credentials are required: the CelesTrak GP API is public. Orbix
 does not read secrets from `.env` for data access and never hardcodes keys.
+
+---
+
+## Running the application
+
+```bash
+# from the repository root, with dependencies installed (see Setup above)
+streamlit run app.py
+```
+
+Streamlit opens <http://localhost:8501> in your browser. The first load:
+
+1. reads the ISS element set through the CelesTrak client (cache → network →
+   snapshot, in that order),
+2. propagates the current state and 120 further samples across one orbital period,
+3. hands that scene to the Globe.gl component, which draws it.
+
+No API key is needed, and if the machine is offline the committed snapshot is used
+(the header chip then reads `SNAPSHOT` rather than `CACHED`/`LIVE`).
+
+**Controls:** drag to orbit, scroll to zoom, hover the satellite for a readout,
+click it to send a selection event back to Python. Use the sidebar to switch on
+offline mode, force a CelesTrak re-download, or refresh the scene.
+
+Useful extras:
+
+```bash
+# verify the 3D component really renders, in a headless browser (needs selenium)
+python scripts/smoke_test_ui.py --screenshot docs/screenshots/step-d-globe.png
+
+# verify the data layer and the propagation layer from the command line
+python scripts/verify_celestrak_api.py
+python scripts/verify_propagation.py --offsets 0,30,45
+```
+
+### Common problems
+
+| Symptom | Cause and fix |
+|---|---|
+| "Could not load orbital data (CelestrakNetworkError)" | No network and no snapshot. Turn off offline mode to retry, or fetch once while connected. |
+| Header shows `CACHED` when you expected `LIVE` | Working as intended: the local cache is authoritative for 2 hours, matching CelesTrak's refresh cadence. Tick "Force CelesTrak re-download" to bypass it. |
+| CelesTrak answers HTTP 403 "not updated" | CelesTrak allows one download per 2-hour update. Orbix reports it as a cache hit, not an error. |
+| Globe area is blank/black | The WebGL context or the vendored `globe.gl.min.js` did not load; check the browser console. Everything else on the page should still work. |
+| Satellite looks stationary between visits | The scene is cached for 60 s, and ISS elements are typically hours old. Check "element age" in the panel — this is not a live tracking view. |
+
+---
+
+## How the globe works
+
+```text
+CelesTrak OMM/JSON  ──►  src/api/celestrak.py      (fetch, validate, cache, snapshot)
+        │
+        ▼
+GpElement ──► src/orbital/propagation.py  (SGP4 via Skyfield)
+        │        ├─ WGS-84 geodetic lat/lon/altitude
+        │        ├─ ITRS/ECEF Cartesian   (Earth-fixed)
+        │        └─ GCRS Cartesian        (inertial, for checks)
+        ▼
+src/ui/presentation.py  (Scene: state + 121-sample track + freshness + panel facts)
+        │
+        ▼
+components/globe/payload.py  (JSON contract: degrees + altitude as a fraction of
+        │                     the globe radius - no maths left for the browser)
+        ▼
+components/globe/frontend/orbix-globe.js  (Globe.gl draws it)
+```
+
+### Python → JavaScript
+
+The globe is a **real Streamlit custom component**, not an injected HTML blob:
+`components/globe/__init__.py` calls `components.declare_component()` on the static
+directory `components/globe/frontend`, so Streamlit serves those files from
+`/component/components.globe.orbix_globe/`.
+
+The front-end speaks Streamlit's component protocol directly (version 1) through a
+~40-line bridge in `orbix-globe.js`:
+
+| Direction | Message | Purpose |
+|---|---|---|
+| JS → Python | `streamlit:componentReady` | handshake on load |
+| JS → Python | `streamlit:setFrameHeight` | keeps the iframe the right height |
+| Python → JS | `streamlit:render` | delivers `{payload, height}` on every rerun |
+| JS → Python | `streamlit:setComponentValue` | returns a value, e.g. a marker click |
+
+That last message is the two-way channel Step E builds on: clicking the satellite
+currently sends `{"event": "select", "norad_id": 25544, ...}` back, and `app.py`
+shows it under the globe. Camera movement happens entirely inside the iframe and
+never triggers a Python rerun.
+
+### Turning orbital coordinates into pixels
+
+| Step | What happens |
+|---|---|
+| Frame | `propagation.py` gives latitude/longitude in the **Earth-fixed** ITRS frame - the same frame the globe mesh uses. |
+| Position | Globe.gl is driven with `.pointLat/.pointLng` in degrees and `.pointAltitude` as a **fraction of the globe radius**; `payload.py` converts `altitude_km / 6371.0088`. The ISS therefore renders at ≈ 0.0667. |
+| Marker size | `.pointRadius` is in **angular degrees** (not km and not radii). The default 0.9° is deliberately larger than a to-scale satellite; only the *size* is exaggerated, never the position or altitude. |
+| Visibility | A translucent halo, a surface radar ring and a label make a 425 km object findable; a thin leader line drops from the marker to its sub-satellite point to keep the altitude honest. |
+| Track | 121 Earth-fixed samples across the next orbital period, so the curve is drawn in the same frame as the rotating Earth. It is *not* an inertial orbit plane, and it drifts west each pass as the Earth turns - which is correct, and is asserted by a test (336.5° of longitude advance per 92.95 min orbit instead of 360°). |
+
+### Textures and assets
+
+Earth imagery is NASA's Blue Marble (public domain) with a NASA-derived topology
+bump map, and Globe.gl 2.34.4 is pinned. All of it is **committed** under
+`components/globe/frontend/` (~3.2 MB) rather than fetched from a CDN at runtime, so
+a flaky network cannot leave the demo with an empty box. Provenance and licences are
+recorded in `components/globe/frontend/assets/README.md`.
+
+---
+
+
+## Repository layout
+
+```text
+Orbix/
+├── app.py                          # Streamlit entry point (Step D)
+├── src/
+│   ├── api/celestrak.py            # CelesTrak GP/OMM client, cache, snapshots
+│   ├── orbital/propagation.py      # SGP4 -> geodetic/ECEF/GCRS positions
+│   ├── ui/presentation.py          # Scene assembly + info-panel facts (no Streamlit)
+│   ├── ui/loading.py              # st.cache_data wrapper for the scene
+│   ├── ui/theme.py                 # page config + dark aerospace CSS
+│   └── data/processing.py          # element cleaning / tabular prep (Phase 2)
+├── components/globe/
+│   ├── __init__.py                 # declare_component + public API
+│   ├── payload.py                  # Python -> JS scene contract (tested)
+│   └── frontend/                   # static assets served to the iframe
+│       ├── index.html
+│       ├── orbix-globe.js          # Globe.gl scene + Streamlit protocol bridge
+│       ├── style.css
+│       ├── assets/                 # NASA Blue Marble + topology (licences inside)
+│       └── vendor/globe.gl.min.js  # pinned Globe.gl 2.34.4
+├── scripts/
+│   ├── verify_celestrak_api.py     # Step B acceptance check (CLI)
+│   ├── verify_propagation.py       # Step C acceptance check (CLI)
+│   └── smoke_test_ui.py            # Step D headless-browser check (optional)
+├── tests/                          # pytest suite + real-data fixtures
+├── data/snapshots/                 # saved CelesTrak payloads + manifest.json
+├── docs/
+│   ├── assignment_requirements.md  # requirement → feature mapping
+│   ├── technical_decisions.md      # decisions, evidence, limitations
+│   └── screenshots/                # application screenshots for the report
+├── .streamlit/config.toml          # dark theme, usage stats off
+├── requirements.txt
+├── requirements-dev.txt
+├── pytest.ini
+└── README.md
+```
 
 ---
 
@@ -237,7 +359,14 @@ python -m pytest
 The suite is hermetic: HTTP is replaced by injected fakes, orbital fixtures are
 real captured CelesTrak payloads, and the clock is controllable so cache-expiry
 behaviour is deterministic. Propagation tests run entirely offline against
-Skyfield's built-in time tables. Expected result: **83 passed**.
+Skyfield's built-in time tables.
+
+Expected result: **109 passed**.
+
+The globe itself cannot be verified from Python, so `scripts/smoke_test_ui.py`
+drives it in a real headless browser and asserts that markers, label, rings and
+track reached the renderer with no console errors (it needs `selenium` and a Chrome
+or Edge install; see `requirements-dev.txt`).
 
 ---
 
@@ -248,8 +377,8 @@ Skyfield's built-in time tables. Expected result: **83 passed**.
 | A | Repository inspection and environment audit | done |
 | B | CelesTrak API client, snapshots, tests | **done** |
 | C | Skyfield SGP4 propagation: geodetic/ECEF/GCRS, reference cross-check, tests | **done** |
-| D | Streamlit + 3D Earth (Three.js/Globe.gl) with the ISS at its propagated position | next |
-| E | Selection, information panel, orbit trajectory, time slider/playback, freshness badge | pending |
+| D | Streamlit + interactive Globe.gl Earth, ISS marker, orbit track, info panel | **done** |
+| E | Time slider/playback, richer selection, focus controls, freshness badge | next |
 | F | GPS-OPS and a bounded Starlink subset, rendering performance | pending |
 | Phase 2 | EDA: statistics, correlations, missing data, outliers, in-app insights | deferred |
 | Phase 3 | LLM-grounded orbital analysis and natural-language explanations | deferred |

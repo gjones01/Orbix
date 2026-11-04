@@ -182,7 +182,86 @@ input, an out-of-range year, and a +02:00 input that must equal its UTC twin.
 
 ---
 
-## Known limitations (as of end of Step C)
+## D13 — A real custom component, not injected HTML
+
+**Decision.** The globe is a Streamlit custom component declared with
+`declare_component(path=components/globe/frontend)`, and the front-end implements
+Streamlit's component protocol (v1) by hand rather than through the React template.
+
+**Rationale.** The brief asks for an architecture that can later support two-way
+communication. `components.html()` cannot return a value; a declared component can.
+Hand-writing the protocol (~40 lines: `componentReady`, `setFrameHeight`,
+`onRender`, `setComponentValue`) avoids a Node/npm build step, which keeps the
+repository reproducible with `pip install` alone.
+
+**Consequence.** Marker clicks already travel back to Python and are displayed under
+the globe; Step E's time slider can use the same channel. Camera movement stays
+inside the iframe and never triggers a rerun. Verified in a headless browser: the
+renderer receives 3 marker points, 1 label, 1 ring, 3 paths and 121 track vertices,
+with zero severe console errors.
+
+## D14 — No orbital maths in JavaScript, and explicit render units
+
+**Decision.** `components/globe/payload.py` converts everything the renderer needs:
+geodetic degrees and `altitude_km / 6371.0088` as the altitude fraction. The browser
+only draws. A test fails the build if trigonometry or the Earth radius appears in the
+front-end source.
+
+**Evidence (each of these was a real bug, found by the browser smoke test):**
+
+| Globe.gl parameter | Unit | Missed assumption |
+|---|---|---|
+| `pointAltitude`, `pathPointAlt`, `ringMaxRadius`(surface) | fraction of globe radius | Using km would put the ISS ~425 radii up |
+| `pointRadius` | **angular degrees** | A value in globe radii made the marker ~0.2 px |
+| `pointOfView({altitude})` | globe radii above the surface | - |
+
+**Consequence.** The satellite's *position* is always its propagated position; only
+the marker's drawn size is exaggerated (0.9°). Visibility comes from a halo, a
+surface radar ring, a label and a leader line down to the sub-satellite point rather
+than by floating the marker. The track is Earth-fixed, and a test pins the effect:
+336.5° of longitude per 92.95-minute orbit instead of 360°, because the Earth turns
+underneath the orbit.
+
+## D15 — Front-end libraries and textures are vendored
+
+**Decision.** Globe.gl 2.34.4, the NASA Blue Marble texture (public domain) and a
+NASA-derived topology bump map are committed under
+`components/globe/frontend/` (~3.2 MB total) and served by Streamlit.
+
+**Evidence.** NASA's `eoimages.gsfc.nasa.gov` was unreachable from this network, and
+a pinned CDN is a single point of failure at demo time; a failed `globe.gl.min.js`
+would leave an empty box. `*.jpg`/`*.png` are marked `binary` in `.gitattributes` so
+line-ending normalisation cannot corrupt them.
+
+---
+
+## Known limitations (as of end of Step D)
+
+1. **One satellite, no playback.** Step D is ISS-only and shows a single instant;
+   the sidebar says so. Time scrubbing, multi-object selection and group switching are
+   Steps E and F by design.
+2. **The scene is a snapshot, not a live feed.** Positions are computed at load time and
+   cached for 60 s, and GP element sets are already hours old, so the globe is not a
+   real-time tracker. The panel shows element age to make this explicit.
+3. **The marker's size is not to scale.** At 425 km the ISS would be sub-pixel; its
+   position and altitude are exact, its drawn radius (0.9°) is not. The leader line
+   and surface ring exist so the exaggeration is not misread as altitude.
+4. **The orbit track is Earth-fixed, not an inertial orbit plane.** It drifts west each
+   pass (336.5°/orbit). Drawing the inertial plane instead would need the globe to stop
+   rotating or the track to be rotated in the shader; that is deliberately not done.
+5. **Depth sorting of the translucent track glow** is left to Three.js. With many
+   satellites this will need per-object render ordering.
+6. **No sunlight/terminator shading.** The texture is a fully sunlit composite, so day
+   and night are not modelled (that needs a solar ephemeris, which Orbix does not ship).
+7. **~3.2 MB of vendored assets** are committed. Acceptable for demo reliability, but
+   it is repository weight that a CDN-based design would avoid.
+8. **The WebGL path is verified with software rendering** (SwiftShader) in headless
+   Chrome. Frame rate on a real GPU was not measured; 1 satellite + 121 track points is
+   far below any plausible limit, but Step F's thousands of objects are unmeasured.
+9. **Streamlit's DOM class names are used by the CSS.** If Streamlit renames its
+   `data-testid`s the chrome-hiding rules may stop applying; the app still works, it
+   just looks less bespoke.
+10. **No LLM, no EDA.** Deliberate phase gating; see `docs/assignment_requirements.md` §3.
 
 1. **Accuracy is bounded by the element set, not by the code.** CelesTrak/Vallado
    puts TLE-class elements at ~1 km accuracy *at epoch*, degrading away from it.

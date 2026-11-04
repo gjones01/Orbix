@@ -78,11 +78,11 @@ verified work rather than by an impressive-looking shell.
 | Correlation analysis between key variables | Correlation matrix over derived orbital metrics (inclination vs altitude, period vs semi-major axis, B* vs decay) | 2 | Deferred (Phase 2) |
 | Insights and summaries displayed in Streamlit | Summary panels grounded in the user's filtered satellite set | 2 | Deferred (Phase 2) |
 | LLM integration used meaningfully | Assistant receives the *actual* propagated figures (selected satellite, altitude, velocity, period, element age) and explains them, answers "where is X right now / over which region", and produces mission summaries | 3 | Deferred (Phase 3). No LLM code exists yet, by design |
-| Streamlit app: clean interface | Dark aerospace mission-control theme; Streamlit is the assignment-mandated framework | 1 | Not yet started (Steps D–E) |
-| Streamlit app: user interaction with data | Rotate/zoom 3D Earth, select satellites, scrub simulation time, choose groups | 1 | Not yet started (Steps D–F) |
+| Streamlit app: clean interface | Dark aerospace mission-control theme driven by `.streamlit/config.toml` plus a custom CSS layer; custom HTML panels instead of default widgets; Streamlit's own chrome hidden | 1 | **Done** (Step D) |
+| Streamlit app: user interaction with data | Rotate/zoom 3D Earth, hover readouts, click-to-select event back to Python, data-source toggles | 1 | **Done for one satellite** (Step D); time playback and multi-satellite selection in Steps E-F |
 | Streamlit app: displays EDA results | EDA panel built in Phase 2 | 2 | Deferred (Phase 2) |
 | Streamlit app: LLM integrated in the app | Chat/summary panel built in Phase 3 | 3 | Deferred (Phase 3) |
-| Streamlit app: error handling, documentation, user guidance | Typed exceptions from the API layer, freshness banner, explicit "cached data" / "offline snapshot" indicators, empty/error states, in-app provenance captions | 1 (foundation done at Step B; UI wiring at Steps D–E) | **Partial** — error model and freshness reporting implemented and tested; UI surfacing pending |
+| Streamlit app: error handling, documentation, user guidance | Typed exceptions surfaced as styled notices with actionable advice, explicit LIVE/CACHED/SNAPSHOT provenance chip, offline mode, loading veil, sidebar explanation of the data and propagation chain | 1 | **Done** (Step D) |
 | Modular, documented, readable code | `src/api`, `src/orbital`, `src/data`, `components/globe`, `scripts`, `tests`; type hints, docstrings, no business logic in `app.py` | all | **In progress** (API layer complete) |
 | Version control (Git/GitHub) | Git repository with per-step commits; committed only after author approval | all | **Done, pending approval to commit** |
 | `README.md` (purpose, setup, API/data details, run instructions) | `README.md` at repository root | all | **In progress** (data source and test instructions present; app instructions added at Step D) |
@@ -105,9 +105,11 @@ verified work rather than by an impressive-looking shell.
    GCRS Cartesian positions, inertial speed, orbital period, and element age with
    staleness warnings. Verified against a direct `sgp4` calculation and a
    hand-written TEME->ECEF rotation (agreement 0.003 m).
-3. **3D visualisation (Steps D–E).** Three.js/Globe.gl Earth embedded in
-   Streamlit, real satellite markers, rotation/zoom, selection, information
-   panel, orbital trajectory, time slider/playback, data-freshness indicator.
+3. **3D visualisation (Steps D-E).** Streamlit custom component embedding Globe.gl
+   (Three.js): NASA Blue Marble Earth with atmosphere, ISS marker at its true
+   altitude, Earth-fixed orbit track for one period, drag/zoom camera, mission-control
+   information panel, LIVE/CACHED/SNAPSHOT provenance chip, offline mode, loading and
+   error states. **Step D complete**; Step E adds time playback and richer selection.
 4. **Additional groups (Step F).** GPS-OPS and a bounded Starlink subset once the
    ISS path is verified end to end, with rendering performance work.
 
