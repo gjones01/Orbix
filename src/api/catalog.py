@@ -76,14 +76,17 @@ class GroupStatus:
 
     spec: GroupSpec
     source: str            #: "network" | "cache" | "snapshot" | "failed"
-    count: int
+    #: Records returned by CelesTrak for this group, BEFORE cross-group de-duplication.
+    #: ``Catalog.counts_by_group()`` reports the unique count instead; the two differ
+    #: whenever an object belongs to more than one loaded group.
+    records_fetched: int
     error: str | None = None
     notes: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
         """True when the group produced records."""
-        return self.source != "failed" and self.count > 0
+        return self.source != "failed" and self.records_fetched > 0
 
     @property
     def label(self) -> str:
@@ -207,7 +210,7 @@ def load_catalog(
                 GroupStatus(
                     spec=spec,
                     source="failed",
-                    count=0,
+                    records_fetched=0,
                     error=f"{type(exc).__name__}: {exc}",
                 )
             )
@@ -226,7 +229,7 @@ def load_catalog(
             GroupStatus(
                 spec=spec,
                 source=result.source,
-                count=len(result.elements),
+                records_fetched=len(result.elements),
                 notes=result.notes,
             )
         )

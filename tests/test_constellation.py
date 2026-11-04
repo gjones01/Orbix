@@ -18,8 +18,8 @@ from components.globe.payload import (
     EARTH_RADIUS_KM,
     altitude_ratio,
     build_constellation_payload,
-    plan_window,
 )
+from src.orbital.window import plan_window
 from src.api.catalog import GROUP_SPECS, load_catalog
 from src.orbital.batch import BatchPropagator
 from src.orbital.propagation import propagate

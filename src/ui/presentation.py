@@ -21,11 +21,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 from components.globe.payload import (
-    WindowPlan,
     altitude_ratio,
     build_constellation_payload,
-    plan_window,
 )
+from src.orbital.window import WindowPlan, plan_window
 from src.api.catalog import GROUP_SPECS, Catalog, Satellite, load_catalog
 from src.orbital.batch import BatchPropagator, BatchSample
 from src.orbital.propagation import propagate_series, utc_now
@@ -163,7 +162,7 @@ class ConstellationScene:
     def summary(self) -> str:
         """One-line description of what was loaded."""
         statuses = ", ".join(
-            f"{status.spec.label} {status.count}"
+            f"{status.spec.label} {status.records_fetched}"
             for status in self.catalog.groups
             if status.ok
         )

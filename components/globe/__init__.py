@@ -35,14 +35,14 @@ from typing import Any
 
 import streamlit.components.v1 as components
 
+# Window sampling policy lives in src.orbital.window; the payload module only
+# consumes it, so it is not re-exported here.
 from .payload import (
     DEFAULT_MARKER_RADIUS,
     EARTH_RADIUS_KM,
     PAYLOAD_VERSION,
-    WindowPlan,
     altitude_ratio,
     build_constellation_payload,
-    plan_window,
     short_name,
 )
 
@@ -51,11 +51,9 @@ __all__ = [
     "EARTH_RADIUS_KM",
     "FRONTEND_DIR",
     "PAYLOAD_VERSION",
-    "WindowPlan",
     "altitude_ratio",
     "build_constellation_payload",
     "globe_component",
-    "plan_window",
     "short_name",
 ]
 
