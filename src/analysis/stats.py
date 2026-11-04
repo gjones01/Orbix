@@ -1,8 +1,8 @@
 """Descriptive statistics, missing-data audit, robust outliers and correlation analysis.
 
 Everything here is pure pandas/numpy and free of Streamlit, so it can be reviewed and
-tested without a running app. Figures are built separately
-(:mod:`src.analysis.figures`); these functions return plain DataFrames.
+tested without a running app. These functions return plain DataFrames; the Plotly figures
+built on top of them come in the next stage (the Analysis tab).
 
 Statistical choices, and why
 ----------------------------
