@@ -186,12 +186,27 @@ does not read secrets from `.env` for data access and never hardcodes keys.
 
 ## Running the application
 
+From the repository root, with dependencies installed (see Setup above):
+
 ```bash
-# from the repository root, with dependencies installed (see Setup above)
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
-Streamlit opens <http://localhost:8501> in your browser. The first load:
+Using `python -m streamlit` rather than the bare `streamlit` command matters: when
+`pip` installs packages into the per-user directory, the `streamlit.exe` launcher
+lands in `%APPDATA%\Python\Python3xx\Scripts`, which is often **not** on `PATH`. Running
+it through the interpreter always works. If you prefer the short command, add that
+folder to `PATH` once:
+
+```powershell
+$scripts = "$env:APPDATA\Python\Python313\Scripts"
+[Environment]::SetEnvironmentVariable(
+    "Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$scripts", "User")
+# then open a new terminal and check:
+streamlit --version
+```
+
+Your browser opens <http://localhost:8501> automatically. The first load:
 
 1. reads the ISS element set through the CelesTrak client (cache → network →
    snapshot, in that order),
@@ -220,7 +235,9 @@ python scripts/verify_propagation.py --offsets 0,30,45
 
 | Symptom | Cause and fix |
 |---|---|
-| "Could not load orbital data (CelestrakNetworkError)" | No network and no snapshot. Turn off offline mode to retry, or fetch once while connected. |
+| `streamlit : The term 'streamlit' is not recognized...` | The `streamlit.exe` launcher is installed but its folder is not on `PATH`. Use `python -m streamlit run app.py`, or add `%APPDATA%\Python\Python313\Scripts` to `PATH` (see above). |
+| `ModuleNotFoundError: No module named 'streamlit'` | Wrong interpreter: the packages are installed for a different Python, or the virtualenv is not activated. Run `python -m pip install -r requirements.txt`. |
+| `Could not load orbital data (CelestrakNetworkError)` | No network and no snapshot. Turn off offline mode to retry, or fetch once while connected. |
 | Header shows `CACHED` when you expected `LIVE` | Working as intended: the local cache is authoritative for 2 hours, matching CelesTrak's refresh cadence. Tick "Force CelesTrak re-download" to bypass it. |
 | CelesTrak answers HTTP 403 "not updated" | CelesTrak allows one download per 2-hour update. Orbix reports it as a cache hit, not an error. |
 | Globe area is blank/black | The WebGL context or the vendored `globe.gl.min.js` did not load; check the browser console. Everything else on the page should still work. |
