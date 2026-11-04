@@ -126,18 +126,6 @@ REQUIRED_OMM_FIELDS: tuple[str, ...] = (
     "MEAN_ANOMALY",
 )
 
-#: Fields copied through to :meth:`GpElement.as_omm` when present.
-OPTIONAL_OMM_FIELDS: tuple[str, ...] = (
-    "OBJECT_ID",
-    "EPHEMERIS_TYPE",
-    "CLASSIFICATION_TYPE",
-    "ELEMENT_SET_NO",
-    "REV_AT_EPOCH",
-    "BSTAR",
-    "MEAN_MOTION_DOT",
-    "MEAN_MOTION_DDOT",
-)
-
 #: Substring of the HTTP 403 body CelesTrak returns for repeated downloads.
 RATE_LIMIT_MARKER = "has not updated since your last successful download"
 
@@ -319,9 +307,6 @@ class GpElement:
             "MEAN_MOTION_DOT": self.mean_motion_dot if self.mean_motion_dot is not None else 0.0,
             "MEAN_MOTION_DDOT": self.mean_motion_ddot if self.mean_motion_ddot is not None else 0.0,
         }
-        for key in OPTIONAL_OMM_FIELDS:
-            if key in self.raw and key not in omm:
-                omm[key] = self.raw[key]
         return omm
 
 
@@ -897,38 +882,51 @@ class CelestrakClient:
             return self._download(clean, cache_key, url, strict=strict)
         except CelestrakRateLimited:
             # CelesTrak enforcing one-download-per-update is not a failure.
-            if cached is not None and allow_stale:
-                result = self._try_snapshot(
-                    cached,
-                    source="snapshot",
-                    strict=strict,
-                    notes=("CelesTrak reports no new GP data since the last download.",),
-                )
-                if result is not None:
-                    logger.info(
-                        "CelesTrak rate limit for %s; reusing snapshot %s",
-                        cache_key,
-                        cached.filename,
-                    )
-                    return result
-            raise
+            result = self._fallback_to_snapshot(
+                cached,
+                strict=strict,
+                allow_stale=allow_stale,
+                note="CelesTrak reports no new GP data since the last download.",
+            )
+            if result is None:
+                raise
+            logger.info(
+                "CelesTrak rate limit for %s; reusing snapshot %s",
+                cache_key,
+                cached.filename,
+            )
+            return result
         except CelestrakError as exc:
-            if cached is not None and allow_stale:
-                result = self._try_snapshot(
-                    cached,
-                    source="snapshot",
-                    strict=strict,
-                    notes=(f"{type(exc).__name__}: {exc}",),
-                )
-                if result is not None:
-                    logger.warning(
-                        "CelesTrak unavailable for %s (%s); using snapshot %s",
-                        cache_key,
-                        exc,
-                        cached.filename,
-                    )
-                    return result
-            raise
+            result = self._fallback_to_snapshot(
+                cached,
+                strict=strict,
+                allow_stale=allow_stale,
+                note=f"{type(exc).__name__}: {exc}",
+            )
+            if result is None:
+                raise
+            logger.warning(
+                "CelesTrak unavailable for %s (%s); using snapshot %s",
+                cache_key,
+                exc,
+                cached.filename,
+            )
+            return result
+
+    def _fallback_to_snapshot(
+        self,
+        cached: SnapshotRecord | None,
+        *,
+        strict: bool,
+        allow_stale: bool,
+        note: str,
+    ) -> GpFetchResult | None:
+        """Serve ``cached`` after a failed request, or ``None`` when not allowed."""
+        if cached is None or not allow_stale:
+            return None
+        return self._try_snapshot(
+            cached, source="snapshot", strict=strict, notes=(note,)
+        )
 
     # -- snapshot access --------------------------------------------------- #
 
@@ -1137,7 +1135,7 @@ def load_snapshot(
     elements, warnings = parse_gp_payload(payload, strict=strict)
     recorded_at = datetime.fromtimestamp(file_path.stat().st_mtime, tz=_UTC)
     record = SnapshotRecord(
-        cache_key=query_cache_key({"NAME": file_path.stem}),
+        cache_key=f"snapshot-{_slug(file_path.stem)}",
         query={},
         url=file_path.resolve().as_uri(),
         filename=file_path.name,
