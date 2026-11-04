@@ -125,9 +125,97 @@ another account on this machine and cannot be scanned (`PermissionError
 [WinError 5]`), so pytest's scratch directory is kept inside the repo
 (and git-ignored).
 
+## D10 — Four coordinate frames, each labelled and each used once
+
+**Decision.** `src/orbital/propagation.py` returns three representations of the
+same physical position and documents the fourth (SGP4's native frame):
+
+| Output | Frame | Rotates with Earth | Used for |
+|---|---|---|---|
+| `latitude_deg` / `longitude_deg` / `altitude_km` | WGS-84 geodetic | surface | UI readouts, sub-satellite point |
+| `ecef_km` | ITRS (ECEF) | **yes** | placing markers on the Three.js globe |
+| `gcrs_km` | GCRS/ICRS | no | orbit-plane geometry, inertial reasoning |
+| `native_sgp4_state().teme_km` | TEME | no | cross-check only, never rendered |
+
+**Evidence.** Skyfield's `framelib` has no `teme` frame; `sat.at()` returns GCRS
+and `frame_xyz(itrs)` gives Earth-fixed coordinates. Using the inertial vector for
+a rotating globe is the most common way to make a correct propagator look wrong,
+so the frames are separated by name.
+
+**Consequence.** `OrbitalState.__post_init__` asserts that the inertial and
+Earth-fixed vectors have the same length (a rotation cannot change magnitude) and
+raises if they do not, so a frame mix-up fails loudly at construction. Tests also
+re-derive lat/lon from `ecef_km` with an independent WGS-84 conversion, and assert
+that the Earth-fixed frame's rotation advances by GMST (15.041°/h).
+
+## D11 — Built-in Earth-orientation tables by default; IERS on request
+
+**Decision.** `get_timescale()` uses `load.timescale(builtin=True)`, i.e. no
+network access. Passing `use_iers_earth_orientation=True` loads
+`finals2000A.all` from the IERS into `data/cache/skyfield` instead.
+
+**Evidence (measured, ISS at its epoch, 2026-11-04T08:52:07Z):**
+
+| Timescale | UT1-UTC used | Longitude | ECEF offset |
+|---|---|---|---|
+| built-in tables | +0.0873 s | 149.748618° | — |
+| IERS `finals2000A.all` | −0.0582 s | 149.749226° | 72 m |
+
+**Rationale.** A 72 m difference is far below the ~1 km accuracy limit of the
+element set itself, and avoiding the download keeps propagation working offline,
+on Streamlit Cloud cold starts, and when the IERS is unreachable. The opt-in path
+writes to a git-ignored directory rather than polluting the repository root.
+
+## D12 — Naive timestamps are rejected, not assumed to be UTC
+
+**Decision.** `propagate()` raises `InvalidTimeError` for a timezone-naive
+`datetime`; callers must attach a timezone.
+
+**Evidence.** Skyfield silently normalises impossible dates: `ts.utc(2026, 13, 45)`
+returns 2027-02-14, and `ts.utc(nan)` raises an internal `IndexError`. Because
+Skyfield's constructors are not a validation layer, Orbix validates the instant
+itself (type, tz-awareness, year range 1900-2100) before handing it over.
+
+**Consequence.** A one-hour timezone mistake would move a LEO satellite ~27,000 km,
+which is not a bug a user would spot on a globe. Tests cover naive input, string
+input, an out-of-range year, and a +02:00 input that must equal its UTC twin.
+
 ---
 
-## Known limitations (as of end of Step B)
+## Known limitations (as of end of Step C)
+
+1. **Accuracy is bounded by the element set, not by the code.** CelesTrak/Vallado
+   puts TLE-class elements at ~1 km accuracy *at epoch*, degrading away from it.
+   Orbix's propagation adds no error of that size: the independent `sgp4`
+   cross-check and a hand-written TEME->ECEF rotation agree with Skyfield's
+   pipeline to 0.003 m, and the built-in/IERS timescale choice moves the answer by
+   72 m.
+2. **Geodetic vs geocentric latitude.** `latitude_deg` is WGS-84 *geodetic* (like a
+   GPS fix), which can exceed the orbital inclination by up to ~0.2° at 52°. That
+   is correct, not a propagation error, and the tests allow for it.
+3. **Positions are not real time.** Element epochs run hours behind (11.3 h in the
+   test snapshot). The UI must show element age and never imply live tracking.
+4. **Element age is guarded, not fixed.** Propagation beyond 30 days from the epoch
+   is refused; 3.5-30 days warns. A caller can override with `max_element_age=None`.
+5. **Docked objects share element sets.** CelesTrak publishes identical elements for
+   ISS(ZARYA), POISK, NAUKA and other docked modules, so they propagate to identical
+   positions. Correct, but it will look like a bug in a scatter plot of 20 stations.
+6. **No JPL ephemeris.** Satellite geocentric positions do not need `de421.bsp`, so
+   Orbix never downloads it. Anything requiring Earth orientation relative to the
+   solar system (e.g. sunlit/eclipse shading) will need an additional ephemeris.
+7. **Performance.** ~244 us per state on this machine; a 120-point orbit trajectory
+   takes ~29 ms. Fine for Step E, but 9,000 Starlink positions would be ~2.2 s if
+   recomputed naively per frame, so Step F will need caching or vectorisation.
+8. **No SGP4 "deep space" concerns exercised yet.** GPS-OPS satellites (12 h orbits)
+   use the same code path but have not been validated against a third-party
+   reference in this repository.
+9. **Streamlit Cloud filesystem is ephemeral.** Runtime snapshots and any downloaded
+   IERS file do not survive a redeploy; committed snapshots are the baseline.
+10. **No LLM, no EDA, no 3D code exists.** Deliberate phase gating; see
+    `docs/assignment_requirements.md` §3.
+
+
+---
 
 1. **Element age, not real time.** GP element sets are fits valid near their
    epoch; at the time of testing the ISS epoch was ~11 hours old. Propagated

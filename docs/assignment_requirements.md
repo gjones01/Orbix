@@ -100,9 +100,11 @@ verified work rather than by an impressive-looking shell.
 1. **Data acquisition (Step B — complete).** CelesTrak GP/OMM client with
    validation, caching, snapshot persistence, offline fallback and freshness
    reporting. It never fabricates data.
-2. **Propagation (Step C — next).** Skyfield/SGP4 propagation of OMM elements to
-   any UTC timestamp: geodetic latitude/longitude/altitude, ECEF and TEME
-   positions for rendering, velocity, and element-age information.
+2. **Propagation (Step C - complete).** Skyfield/SGP4 propagation of OMM elements
+   to any UTC timestamp: geodetic latitude/longitude/altitude on WGS-84, ECEF and
+   GCRS Cartesian positions, inertial speed, orbital period, and element age with
+   staleness warnings. Verified against a direct `sgp4` calculation and a
+   hand-written TEME->ECEF rotation (agreement 0.003 m).
 3. **3D visualisation (Steps D–E).** Three.js/Globe.gl Earth embedded in
    Streamlit, real satellite markers, rotation/zoom, selection, information
    panel, orbital trajectory, time slider/playback, data-freshness indicator.

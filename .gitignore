@@ -17,6 +17,10 @@ env/
 .streamlit/secrets.toml
 
 # ---- Orbix caches -------------------------------------------------------
+# Skyfield downloads IERS Earth-orientation data here when builtin time tables
+# are disabled. Never commit it.
+finals2000A.all*
+
 # Downloaded CelesTrak payloads are retained when they are small enough to be
 # useful as committed, reproducible fixtures (ISS + small groups).  Bulk groups
 # are large, change every 2 hours, and must not bloat the repository.

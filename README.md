@@ -12,9 +12,10 @@ Orbix is a solo final project for the *Masters of Data Science — Programming f
 Data Science* capstone. The assignment mapping (what is required, what each phase
 delivers) lives in [`docs/assignment_requirements.md`](docs/assignment_requirements.md).
 
-> **Current status: Phase 1, Step B complete.** Real CelesTrak data acquisition,
-> validation, caching and snapshotting are implemented and tested (54 tests).
-> Orbital propagation and the 3D interface are the next steps; see
+> **Current status: Phase 1, Step C complete.** Real CelesTrak data acquisition,
+> caching and snapshotting (Step B) plus Skyfield/SGP4 propagation to WGS-84
+> geodetic, Earth-fixed (ECEF) and inertial (GCRS) coordinates (Step C) are
+> implemented and tested (**83 tests**). The 3D interface is next; see
 > [Roadmap](#roadmap).
 
 ---
@@ -100,17 +101,79 @@ the requested UTC timestamp.
 
 ---
 
+## Orbital propagation
+
+`src/orbital/propagation.py` turns those element sets into positions with
+Skyfield's SGP4 implementation, which is the corrected algorithm from Vallado,
+Crawford & Hujsak, *Revisiting Spacetrack Report #3*.
+
+One call returns the same physical position in three coordinate systems, because
+mixing them up is the classic orbital-visualisation bug:
+
+| `OrbitalState` field | Coordinate system | Rotates with Earth | Use it for |
+|---|---|---|---|
+| `latitude_deg`, `longitude_deg`, `altitude_km` | **WGS-84 geodetic** (`a` = 6378.137 km, `f` = 1/298.257223563) | surface | readouts, sub-satellite point |
+| `ecef_km` | **ITRS / ECEF** — `x` at 0° longitude on the equator, `y` at 90°E, `z` at the north pole | **yes** | satellite markers on the Three.js globe |
+| `gcrs_km` | **GCRS / ICRS** geocentric inertial | no | orbit planes, inertial geometry |
+| `native_sgp4_state().teme_km` | **TEME** — SGP4's native frame | no | cross-checking only, never rendered |
+
+Also returned: `speed_km_s` (inertial), `radius_km`, `period_minutes` (from the
+mean motion), `inclination_deg`, the element `epoch`, the `element_age` at the
+requested instant, and any staleness `warnings`.
+
+```python
+from datetime import datetime, timezone
+from src.api.celestrak import CelestrakClient
+from src.orbital import propagate
+
+iss = CelestrakClient().fetch_by_catalog_number(25544).elements[0]
+state = propagate(iss, datetime(2026, 11, 4, 9, 22, 7, tzinfo=timezone.utc))
+
+state.latitude_deg, state.longitude_deg, state.altitude_km   # 44.751, -89.176, 426.71
+state.ecef_km                                                # (-4839.62, 4768.18, 69.57)
+state.gcrs_km                                                # inertial
+state.speed_km_s                                             # 7.659
+```
+
+Verified behaviour:
+
+* ISS at its 2026-11-04 epoch: **415.13 km** altitude, **7.6659 km/s**, period
+  **92.95 min**, inclination **51.63°**.
+* The independent `sgp4` library and a from-scratch TEME→ECEF rotation written out
+  of the IAU-82 GMST expression reproduce the pipeline's Earth-fixed position to
+  **0.003 m**.
+* Earth-fixed and inertial vectors always share the same length, and the rotation
+  between them advances at the sidereal rate (15.041°/h) — the tests assert both,
+  so a frame mix-up cannot pass silently.
+* Timezone-naive timestamps are **rejected** rather than guessed; elements more
+  than 3.5 days from the requested time warn, and more than 30 days refuse.
+
+```bash
+python scripts/verify_propagation.py                  # ISS at its element epoch
+python scripts/verify_propagation.py --when now --offsets 0,15,30,45
+python scripts/verify_propagation.py --group STATIONS --limit 4
+```
+
+No network access is needed for propagation: Skyfield's built-in Earth-orientation
+tables are used by default (the IERS `finals2000A.all` variant differs by 72 m and
+is opt-in), and no JPL ephemeris download is required.
+
+---
+
 ## Repository layout
+
 
 ```text
 Orbix/
 ├── app.py                          # Streamlit entry point (Step D)
 ├── src/
 │   ├── api/celestrak.py            # CelesTrak GP/OMM client, cache, snapshots
-│   ├── orbital/propagation.py      # Skyfield SGP4 propagation (Step C)
+│   ├── orbital/propagation.py      # SGP4 -> geodetic/ECEF/GCRS positions
 │   └── data/processing.py          # element cleaning / tabular prep (later)
 ├── components/globe/               # Three.js / Globe.gl front-end (Step D)
-├── scripts/verify_celestrak_api.py # Step B acceptance check (CLI)
+├── scripts/
+│   ├── verify_celestrak_api.py     # Step B acceptance check (CLI)
+│   └── verify_propagation.py       # Step C acceptance check (CLI)
 ├── tests/                          # pytest suite + real-data fixtures
 ├── data/snapshots/                 # saved CelesTrak payloads + manifest.json
 ├── docs/
@@ -173,7 +236,8 @@ python -m pytest
 
 The suite is hermetic: HTTP is replaced by injected fakes, orbital fixtures are
 real captured CelesTrak payloads, and the clock is controllable so cache-expiry
-behaviour is deterministic. Expected result: **54 passed**.
+behaviour is deterministic. Propagation tests run entirely offline against
+Skyfield's built-in time tables. Expected result: **83 passed**.
 
 ---
 
@@ -183,8 +247,8 @@ behaviour is deterministic. Expected result: **54 passed**.
 |---|---|---|
 | A | Repository inspection and environment audit | done |
 | B | CelesTrak API client, snapshots, tests | **done** |
-| C | Skyfield SGP4 propagation: lat/lon/altitude, TEME/ECEF, reference-case tests | next |
-| D | Streamlit + 3D Earth (Three.js/Globe.gl) with the ISS at its propagated position | pending |
+| C | Skyfield SGP4 propagation: geodetic/ECEF/GCRS, reference cross-check, tests | **done** |
+| D | Streamlit + 3D Earth (Three.js/Globe.gl) with the ISS at its propagated position | next |
 | E | Selection, information panel, orbit trajectory, time slider/playback, freshness badge | pending |
 | F | GPS-OPS and a bounded Starlink subset, rendering performance | pending |
 | Phase 2 | EDA: statistics, correlations, missing data, outliers, in-app insights | deferred |

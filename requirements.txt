@@ -10,6 +10,13 @@ requests>=2.31,<3
 # Application framework required by the assignment.
 streamlit>=1.36,<2
 
+# SGP4 orbital propagation. Skyfield wraps the reference `sgp4` implementation
+# (Vallado et al., "Revisiting Spacetrack Report #3") and adds the ICRS/ITRS
+# frame machinery Orbix needs. It pulls in sgp4, jplephem and certifi.
+# No JPL ephemeris file is downloaded: satellite geocentric positions do not
+# require de421.bsp.
+skyfield>=1.55,<2
+
 # Data manipulation for the EDA phase and for tabular orbital summaries.
 pandas>=2.1,<3
 numpy>=1.26,<3
