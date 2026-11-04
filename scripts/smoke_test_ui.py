@@ -39,6 +39,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--settle", type=float, default=14.0,
                         help="seconds to let the scene settle before assertions")
     parser.add_argument("--screenshot", type=str, default=None)
+    parser.add_argument(
+        "--analysis-screenshot", type=str, default=None,
+        help="capture the Analysis tab too (globe screenshot is --screenshot)",
+    )
     parser.add_argument("--keep-server", action="store_true")
     parser.add_argument("--headful", action="store_true")
     parser.add_argument(
@@ -106,7 +110,8 @@ def _snapshot_state(directory: Path) -> dict[str, int]:
 
 
 def run_browser_checks(url: str, timeout: float, settle: float, headful: bool,
-                       screenshot: str | None, starlink: bool = False
+                       screenshot: str | None, starlink: bool = False,
+                       analysis_screenshot: str | None = None
                        ) -> tuple[dict, list[str]]:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
@@ -182,9 +187,70 @@ def run_browser_checks(url: str, timeout: float, settle: float, headful: bool,
 
         report, failures = _interaction_checks(driver, initial, report, failures,
                                                screenshot)
+        driver.switch_to.default_content()
+        _analysis_tab_checks(driver, report, failures, analysis_screenshot, settle)
         return report, failures
     finally:
         driver.quit()
+
+
+def _analysis_tab_checks(driver, report: dict, failures: list[str],
+                         screenshot: str | None, settle: float) -> None:
+    """Open the Analysis tab and assert that its sections and charts really render."""
+    from selenium.webdriver.common.by import By
+
+    tabs = driver.find_elements(By.CSS_SELECTOR, "[data-testid='stTabs'] button")
+    labels = [tab.text.strip() for tab in tabs]
+    report["tabs"] = labels
+    target = next((tab for tab in tabs if tab.text.strip().lower() == "analysis"), None)
+    if target is None:
+        failures.append(f"no Analysis tab found (tabs: {labels})")
+        return
+    target.click()
+    time.sleep(max(2.0, settle * 0.35))
+
+    body = driver.find_element(By.TAG_NAME, "body").text
+    sections = {
+        "regimes": "Orbital regimes",
+        "distributions": "Distributions",
+        "freshness": "Freshness and missing data",
+        "outliers": "Outlier diagnostics",
+        "correlations": "Correlations: pooled vs within constellation",
+    }
+    found = {key: header in body for key, header in sections.items()}
+    report["analysisSections"] = found
+    for key, present in found.items():
+        if not present:
+            failures.append(f"analysis section missing: {key}")
+
+    charts = driver.find_elements(By.CSS_SELECTOR, ".js-plotly-plot")
+    report["analysisCharts"] = len(charts)
+    if len(charts) < 5:
+        failures.append(f"expected at least 5 Plotly charts, found {len(charts)}")
+
+    # Tables are Streamlit dataframes; at least the regime crosstab must be present.
+    if not driver.find_elements(By.CSS_SELECTOR, "[data-testid='stDataFrame']"):
+        failures.append("no data tables rendered in the Analysis tab")
+
+    if screenshot:
+        Path(screenshot).parent.mkdir(parents=True, exist_ok=True)
+        # The analysis page is long: a taller viewport captures more of it in one image.
+        driver.set_window_size(1600, 2400)
+        time.sleep(1.5)
+        driver.save_screenshot(str(screenshot))
+        # Second capture of the lower half (outliers and correlations). Streamlit scrolls
+        # an inner container, not the window.
+        driver.execute_script(
+            "var main = document.querySelector('[data-testid=\"stMain\"]')"
+            " || document.scrollingElement; main.scrollTop = main.scrollHeight;"
+        )
+        time.sleep(1.5)
+        lower = Path(screenshot).with_name(
+            Path(screenshot).stem + "-lower" + Path(screenshot).suffix
+        )
+        driver.save_screenshot(str(lower))
+        driver.execute_script("window.scrollTo(0, 0);")
+        driver.set_window_size(1600, 1000)
 
 
 def _interaction_checks(driver, initial: dict, report: dict, failures: list[str],
@@ -313,6 +379,25 @@ def _interaction_checks(driver, initial: dict, report: dict, failures: list[str]
         "drawCalls": perf["drawnCalls"],
     }
 
+    # --- analysis highlight bridge ---------------------------------------- #
+    # The chart -> globe path has two halves: Python must ship highlight_ids in the
+    # payload (covered by a unit test) and the renderer must emphasise those points.
+    # This exercises the second half through the same function the payload uses.
+    sample_ids = driver.execute_script(
+        "return window.__orbix.metadata.slice(0, 3).map(function (m) { return m.id; });"
+    )
+    driver.execute_script("window.__orbix.setHighlights(arguments[0]);", sample_ids)
+    time.sleep(0.3)
+    highlighted = driver.execute_script("return window.__orbix.highlightCount;")
+    report["highlight"] = {"requested": len(sample_ids), "applied": highlighted}
+    if highlighted != len(sample_ids):
+        failures.append(
+            f"highlight bridge applied {highlighted} of {len(sample_ids)} ids")
+    driver.execute_script("window.__orbix.setHighlights([]);")
+    time.sleep(0.2)
+    if driver.execute_script("return window.__orbix.highlightCount;") != 0:
+        failures.append("highlight could not be cleared")
+
     if screenshot:
         driver.switch_to.default_content()
         Path(screenshot).parent.mkdir(parents=True, exist_ok=True)
@@ -338,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"server healthy on {url}")
         report, failures = run_browser_checks(
             url, args.timeout, args.settle, args.headful, args.screenshot,
-            starlink=args.starlink)
+            starlink=args.starlink, analysis_screenshot=args.analysis_screenshot)
         initial = report.get("initial", {})
         summary = {
             "satellites_loaded": initial.get("total"),
@@ -351,6 +436,10 @@ def main(argv: list[str] | None = None) -> int:
             "api_quiet": report.get("api_quiet"),
             "reset": report.get("reset"),
             "window": report.get("window"),
+            "highlight": report.get("highlight"),
+            "tabs": report.get("tabs"),
+            "analysisSections": report.get("analysisSections"),
+            "analysisCharts": report.get("analysisCharts"),
             "perf": report.get("perf"),
             "severeErrors": report.get("severeErrors"),
         }

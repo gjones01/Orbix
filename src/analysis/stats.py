@@ -2,7 +2,7 @@
 
 Everything here is pure pandas/numpy and free of Streamlit, so it can be reviewed and
 tested without a running app. These functions return plain DataFrames; the Plotly figures
-built on top of them come in the next stage (the Analysis tab).
+built on them live in :mod:`src.analysis.figures`.
 
 Statistical choices, and why
 ----------------------------
@@ -11,19 +11,23 @@ and strongly multi-modal (a constellation is a set of discrete shells), so a mea
 describes almost nothing on its own and a standard deviation assumes a symmetry the data
 does not have.
 
-**Spearman, not Pearson.** The relationships of interest are monotone at best, not
-linear, and several variables (eccentricity, B*) are skewed and bounded. Spearman
-correlates ranks, so one extreme object cannot dominate the coefficient.
+**Spearman, not Pearson.** The relationships of interest are monotone at best, not linear,
+and several variables (eccentricity, B*) are skewed and bounded. Spearman correlates
+ranks, so one extreme object cannot dominate the coefficient.
 
 **No p-values.** These are not random samples from a population: they are near-complete
 censuses of the tracked catalogues. At n ~ 10^4 every correlation is "significant", so a
 p-value would be noise dressed as evidence. Effect size (rho) and n are reported instead.
 
-**Robust z-scores, with a stated failure mode.** The modified z-score
-``0.6745 (x - median) / MAD`` divides by the median absolute deviation, which is zero
-whenever more than half of a group shares one value - exactly what happens to inclination
-inside a single Starlink shell. That case is detected and reported as *degenerate*
-instead of producing infinity, and the IQR fence is used on its own there.
+**Nothing is ever dropped.** Outlier detection returns flags alongside the untouched frame;
+the caller keeps every row and decides what to display. A flag is a diagnostic, not a
+deletion, and not a claim that the object is wrong.
+
+**Stratification before interpretation.** A "constellation" is an editorial group, not a
+homogeneous population: the weather group alone mixes ~800 km polar platforms with
+geosynchronous meteorological satellites. :func:`add_stratum` therefore splits groups by
+orbital regime, and :func:`pooled_vs_within` reports per-group coefficients next to the
+pooled one instead of asserting an aggregation effect.
 """
 
 from __future__ import annotations
@@ -38,14 +42,18 @@ from src.analysis.provenance import column as column_spec
 
 __all__ = [
     "DESCRIPTIVE_COLUMNS",
+    "HETEROGENEOUS_PCT",
     "STALE_ELEMENT_HOURS",
+    "add_stratum",
     "composition",
     "correlation_matrix",
     "describe",
     "freshness",
     "missing_report",
     "outliers",
+    "per_group_correlations",
     "pooled_vs_within",
+    "regime_counts",
 ]
 
 #: Element age beyond which SGP4 accuracy degrades to a few kilometres or worse. 3.5 days
@@ -69,9 +77,10 @@ DESCRIPTIVE_COLUMNS: tuple[str, ...] = (
 #: Constant of the modified z-score: makes MAD comparable to a standard deviation.
 _MAD_SCALE = 0.6745
 
-#: If more than this share of a group is flagged, the group is probably a mixture of
-#: populations rather than a single population with contamination.
-_HETEROGENEOUS_PCT = 10.0
+#: Default share of a group that may be flagged before the group itself is reported as
+#: heterogeneous. A DIAGNOSTIC HEURISTIC, not a statistical law: the real criterion is the
+#: shape of the distribution, which the caller should plot. Override per call.
+HETEROGENEOUS_PCT = 10.0
 
 
 def _numeric(frame: pd.DataFrame, columns: Sequence[str]) -> list[str]:
@@ -119,6 +128,36 @@ def composition(frame: pd.DataFrame, by: str = "constellation") -> pd.DataFrame:
         "n": counts.to_numpy(dtype="int64"),
         "share_pct": (100.0 * counts.to_numpy() / total) if total else np.array([]),
     })
+
+
+def regime_counts(frame: pd.DataFrame, by: str = "constellation") -> pd.DataFrame:
+    """Cross-tabulation of constellation by orbital regime.
+
+    This is how a mixed group announces itself: one row per constellation, one column per
+    regime, cell = number of objects. ``weather`` shows up as LEO *and* GEO rather than as
+    a single population with outliers.
+    """
+    table = pd.crosstab(frame[by].astype(str), frame["regime"].astype(str))
+    return table.reset_index().rename(columns={"index": by})
+
+
+def add_stratum(
+    frame: pd.DataFrame, *, with_regime: bool = True, by: str = "constellation"
+) -> pd.DataFrame:
+    """Return a copy with a ``stratum`` column for stratified statistics.
+
+    With ``with_regime`` the stratum looks like ``"weather / GEO"``; without it, the
+    stratum is just the constellation. Nothing else changes: the original columns,
+    provenance and rows are preserved, so any flagged observation can still be traced back
+    to the object that produced it.
+    """
+    out = frame.copy()
+    groups = out[by].astype(str)
+    if with_regime:
+        out["stratum"] = groups + " / " + out["regime"].astype(str)
+    else:
+        out["stratum"] = groups
+    return out
 
 
 def describe(
@@ -171,21 +210,33 @@ def outliers(
     *,
     iqr_k: float = 1.5,
     mad_z: float = 3.5,
+    heterogeneous_pct: float = HETEROGENEOUS_PCT,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Robust outlier detection per group, by IQR fence and modified z-score.
+    """Robust outlier diagnostics per group, by IQR fence and modified z-score.
 
     Two independent criteria are used because they fail in different places. The Tukey
     fence ``[q1 - k*IQR, q3 + k*IQR]`` is scale-free but assumes the body of the
     distribution is unimodal; the modified z-score uses the median and MAD, tolerates
     skew, but is undefined when MAD is zero. An object is flagged if *either* criterion
-    fires, and ``reason`` records which - nothing is called an outlier without a stated
-    rule.
+    fires, and ``reason`` records which.
+
+    **Flags never remove rows.** The frame is untouched; ``flagged`` is a separate table of
+    observations with the rule that fired, so the caller can display, filter or ignore it.
+    A flag is a prompt to look, not a verdict.
+
+    **A high flag rate indicts the group, not the objects.** When more than
+    ``heterogeneous_pct`` per cent of a group is flagged, ``heterogeneous`` is set and the
+    note says the group is probably multi-modal: the weather group mixes LEO and GEO
+    platforms, Starlink occupies discrete shells, and in both cases the "outliers" are a
+    legitimate orbital population. The threshold is passed in as a configurable heuristic
+    precisely because it is not a statistical law - stratify the group instead
+    (:func:`add_stratum`) and look at the distribution.
 
     Returns
     -------
     (summary, flagged)
-        ``summary``: one row per group with fences, counts and a ``degenerate`` flag.
-        ``flagged``: the individual objects, with the reason they were flagged.
+        ``summary``: one row per group with fences, counts, ``outlier_pct`` and flags.
+        ``flagged``: the individual observations, with their reason.
     """
     column_spec(column)  # fail loudly on an undocumented column
     summary_rows: list[dict[str, object]] = []
@@ -220,11 +271,9 @@ def outliers(
             # MAD of zero: half the group shares one value, so a robust z is undefined.
             z = pd.Series(np.nan, index=values.index, dtype="float64")
             flag_mad = pd.Series(False, index=values.index)
-            z_thresh = pd.Series(False, index=values.index)
         else:
             z = _MAD_SCALE * (values - median) / mad
-            z_thresh = z.abs() > mad_z
-            flag_mad = z_thresh
+            flag_mad = z.abs() > mad_z
 
         flagged = flag_iqr | flag_mad
         outlier_pct = 100.0 * int(flagged.sum()) / n
@@ -232,22 +281,18 @@ def outliers(
         if degenerate:
             notes.append("MAD is zero (over half the group shares one value): "
                          "IQR fence only")
-        if outlier_pct > _HETEROGENEOUS_PCT:
-            # A large "outlier" share is evidence about the GROUP, not about the objects:
-            # the weather group, for instance, mixes ~800 km polar platforms with GEO
-            # meteorological satellites, so a third of it sits outside the LEO fence and
-            # none of those objects is anomalous. Call it what it is.
+        if outlier_pct > heterogeneous_pct:
             notes.append(
-                f"{outlier_pct:.0f}% flagged: the group is more likely multi-modal "
-                "than contaminated - inspect its distribution before calling these "
-                "objects outliers"
+                f"{outlier_pct:.0f}% flagged (> {heterogeneous_pct:g}% heuristic): the "
+                "group is more likely multi-modal than contaminated - stratify it by "
+                "regime and inspect the distribution before calling these objects outliers"
             )
         row.update({
             "q1": q1, "median": median, "q3": q3, "iqr": iqr,
             "lower_fence": lower, "upper_fence": upper, "mad": mad,
             "n_iqr": int(flag_iqr.sum()), "n_mad": int(flag_mad.sum()),
             "n_flagged": int(flagged.sum()), "outlier_pct": outlier_pct,
-            "heterogeneous": bool(outlier_pct > _HETEROGENEOUS_PCT),
+            "heterogeneous": bool(outlier_pct > heterogeneous_pct),
             "degenerate": bool(degenerate),
             "note": "; ".join(notes),
         })
@@ -259,7 +304,7 @@ def outliers(
                 reasons.append(
                     f"outside {iqr_k:g}xIQR fence [{lower:.4g}, {upper:.4g}]"
                 )
-            if bool(z_thresh.at[index]):
+            if bool(flag_mad.at[index]):
                 reasons.append(
                     f"modified z {float(z.at[index]):+.1f} exceeds {mad_z:g}"
                 )
@@ -267,6 +312,7 @@ def outliers(
                 "norad_id": int(sub.at[index, "norad_id"]),
                 "name": str(sub.at[index, "name"]),
                 "group": group,
+                "regime": str(sub.at[index, "regime"]),
                 "value": float(values.at[index]),
                 "group_median": median,
                 "robust_z": float(z.at[index]) if not degenerate else np.nan,
@@ -274,15 +320,6 @@ def outliers(
             })
 
     return pd.DataFrame(summary_rows), pd.DataFrame(flagged_rows)
-
-
-def correlation_matrix(
-    frame: pd.DataFrame, columns: Sequence[str], *, by: str | None = None
-) -> pd.DataFrame:
-    """Spearman rank-correlation matrix, optionally for a single group."""
-    names = _numeric(frame, columns)
-    subset = frame if by is None else frame.loc[frame["constellation"] == by]
-    return subset[names].corr(method="spearman")
 
 
 def freshness(frame: pd.DataFrame, by: str = "constellation") -> pd.DataFrame:
@@ -314,94 +351,162 @@ def freshness(frame: pd.DataFrame, by: str = "constellation") -> pd.DataFrame:
     )
 
 
+def per_group_correlations(
+    frame: pd.DataFrame,
+    x: str,
+    y: str,
+    by: str = "constellation",
+    *,
+    min_n: int = 10,
+) -> pd.DataFrame:
+    """Every per-group Spearman coefficient for one variable pair, defined or not.
+
+    This is the evidence behind :func:`pooled_vs_within`: one row per group with its n, its
+    coefficient and - crucially - *why* a coefficient is missing when it is missing. A
+    correlation of a constant is undefined, not zero, and a group with five objects cannot
+    support one; both cases are reported instead of being quietly dropped.
+    """
+    names = [x, y]
+    rows = []
+    for group, sub in frame.groupby(by, observed=True):
+        pair = sub[names].dropna()
+        n = int(len(pair))
+        if n < min_n:
+            rho, defined, reason = np.nan, False, f"only {n} complete pairs (min {min_n})"
+        elif pair[x].nunique() < 2 or pair[y].nunique() < 2:
+            constant = x if pair[x].nunique() < 2 else y
+            rho, defined, reason = np.nan, False, f"{constant} is constant in this group"
+        else:
+            value = pair[x].corr(pair[y], method="spearman")
+            if pd.isna(value):
+                rho, defined, reason = np.nan, False, "coefficient undefined"
+            else:
+                rho, defined, reason = float(value), True, ""
+        rows.append({
+            "group": str(group), "n": n, "rho": rho,
+            "defined": defined, "reason": reason,
+        })
+    return pd.DataFrame(rows).sort_values("n", ascending=False, ignore_index=True)
+
+
+def correlation_matrix(
+    frame: pd.DataFrame, columns: Sequence[str], *, by: str | None = None
+) -> pd.DataFrame:
+    """Spearman rank-correlation matrix, optionally for one constellation."""
+    names = _numeric(frame, columns)
+    subset = frame if by is None else frame.loc[frame["constellation"] == by]
+    return subset[names].corr(method="spearman")
+
+
 def pooled_vs_within(
     frame: pd.DataFrame,
     columns: Sequence[str],
     by: str = "constellation",
     *,
     min_n: int = 10,
-    min_rho: float = 0.3,
+    material_gap: float = 0.3,
 ) -> pd.DataFrame:
-    """Compare pooled Spearman correlations with the same correlations inside each group.
+    """Compare pooled Spearman coefficients with the same coefficients inside each group.
 
-    This is the aggregation-bias demonstration. Pooling different constellations mixes the
-    *between-group* structure into the coefficient: two variables can correlate across
-    groups simply because groups differ in both (a Simpson-type effect), while within any
-    single constellation there is no relationship at all - or the opposite one.
+    Pooling mixes *between-group* structure into the coefficient: two variables can
+    correlate across groups simply because the groups differ in both, while inside any
+    single group there is no relationship - or the opposite one. The table is therefore
+    written to be read sceptically:
 
-    For every variable pair the table reports the pooled rho, the within-group rho values
-    (number of groups where it is defined, min, median, max) and the gap between pooled and
-    median-within. A pair is marked ``sign_flip`` when at least one group's rho has the
-    opposite sign to the pooled value, and ``confounded`` when the pooled and within-median
-    coefficients differ by more than ``min_rho`` - in both cases the pooled number must not
-    be reported as a finding about satellites.
-
-    Groups are only included when they have at least ``min_n`` complete pairs and both
-    variables vary: a correlation is undefined for a constant, and inclination inside a
-    single Starlink shell is exactly that. Those groups are counted in
-    ``undefined_groups`` instead of being silently dropped.
+    * ``pooled_rho``, ``pooled_n`` - the number people quote, and its n.
+    * ``within_min`` / ``within_median`` / ``within_max`` plus the per-group n range - what
+      actually happens inside the groups.
+    * ``gap`` = pooled - within median, and ``material_difference`` when |gap| >=
+      ``material_gap``. A gap proves nothing about *why*.
+    * ``same_sign_share`` - share of defined groups whose coefficient has the pooled sign.
+      **A difference in magnitude is not a sign reversal**, and this column exists so the
+      two cannot be confused.
+    * ``reversed_groups`` - how many groups have the opposite sign to the pooled one.
+    * ``simpson_pattern`` - true only when *every* defined group has a non-zero coefficient
+      of the opposite sign to the pooled one, with at least two groups. That is the narrow
+      condition under which pooled and stratified associations genuinely disagree in
+      direction, i.e. the only case where language about aggregation reversal is earned. It
+      is a flag on this evidence, not a claim about the world.
+    * ``undefined_groups`` - groups where no coefficient exists. Reported, never omitted;
+      :func:`per_group_correlations` gives the reason for each.
     """
     names = _numeric(frame, columns)
     pairs = list(combinations(names, 2))
     pooled_matrix = frame[names].corr(method="spearman")
 
-    # One eligibility rule for both the values and the "undefined" count, so a group can
-    # never be counted as undefined and used as evidence at the same time.
-    per_group: dict[str, dict[tuple[str, str], float | None]] = {}
+    # One eligibility rule for the values and the "undefined" count, so a group can never be
+    # counted as undefined and used as evidence at the same time.
+    per_group: dict[str, dict[tuple[str, str], tuple[float | None, int]]] = {}
     for group, sub in frame.groupby(by, observed=True):
         rho = sub[names].corr(method="spearman")
-        per_group[str(group)] = {
-            pair: (
-                float(rho.loc[pair])
-                if len(sub[list(pair)].dropna()) >= min_n and pd.notna(rho.loc[pair])
-                else None
-            )
-            for pair in pairs
-        }
+        entries: dict[tuple[str, str], tuple[float | None, int]] = {}
+        for pair in pairs:
+            complete = int(len(sub[list(pair)].dropna()))
+            if complete >= min_n and pd.notna(rho.loc[pair]):
+                entries[pair] = (float(rho.loc[pair]), complete)
+            else:
+                entries[pair] = (None, 0)
+        per_group[str(group)] = entries
 
     rows = []
-    for pair in pairs:
-        a, b = pair
+    for a, b in pairs:
+        pair = (a, b)
         pooled = pooled_matrix.loc[a, b]
         defined = {
-            group: value
+            group: values[pair][0]
             for group, values in per_group.items()
-            if (value := values[pair]) is not None
+            if values[pair][0] is not None
         }
-        undefined_count = len(per_group) - len(defined)
+        sizes = [
+            values[pair][1] for values in per_group.values()
+            if values[pair][0] is not None
+        ]
+        base = {
+            "x": a, "y": b, "pair": f"{a} ~ {b}",
+            "pooled_rho": pooled, "pooled_n": int(len(frame)),
+            "n_groups_defined": len(defined),
+            "undefined_groups": len(per_group) - len(defined),
+        }
         if not defined:
             rows.append({
-                "pair": f"{a} ~ {b}", "pooled_rho": pooled,
-                "pooled_n": int(len(frame)), "n_groups": 0,
+                **base,
                 "within_min": np.nan, "within_median": np.nan, "within_max": np.nan,
-                "gap": np.nan, "sign_flip": False, "confounded": False,
-                "undefined_groups": undefined_count,
+                "within_n_min": 0, "within_n_max": 0, "gap": np.nan,
+                "same_sign_share": np.nan, "reversed_groups": 0,
+                "simpson_pattern": False, "material_difference": False,
             })
             continue
 
-        within = np.array(list(defined.values()))
+        within = np.array(list(defined.values()), dtype="float64")
         median_within = float(np.median(within))
         gap = float(pooled - median_within) if pd.notna(pooled) else float("nan")
-        sign_flip = bool(
-            pd.notna(pooled) and pooled != 0
-            and np.any(np.sign(within) == -np.sign(pooled))
-        )
+        if pd.notna(pooled) and pooled != 0:
+            same_sign = np.sign(within) == np.sign(pooled)
+            same_sign_share = float(same_sign.mean())
+            reversed_groups = int((~same_sign & (within != 0)).sum())
+            simpson = bool(
+                len(within) >= 2 and np.all(np.sign(within) == -np.sign(pooled))
+            )
+        else:
+            same_sign_share, reversed_groups, simpson = np.nan, 0, False
+
         rows.append({
-            "pair": f"{a} ~ {b}",
-            "pooled_rho": pooled,
-            "pooled_n": int(len(frame)),
-            "n_groups": len(defined),
+            **base,
             "within_min": float(within.min()),
             "within_median": median_within,
             "within_max": float(within.max()),
+            "within_n_min": int(min(sizes)),
+            "within_n_max": int(max(sizes)),
             "gap": gap,
-            "sign_flip": sign_flip,
-            "confounded": bool(pd.notna(gap) and abs(gap) >= min_rho) or sign_flip,
-            "undefined_groups": undefined_count,
+            "same_sign_share": same_sign_share,
+            "reversed_groups": reversed_groups,
+            "simpson_pattern": simpson,
+            "material_difference": bool(pd.notna(gap) and abs(gap) >= material_gap),
         })
 
     result = pd.DataFrame(rows)
     if result.empty:
         return result
-    return result.sort_values("gap", key=lambda s: s.abs(), ascending=False,
-                             ignore_index=True)
+    return result.sort_values(
+        "gap", key=lambda s: s.abs(), ascending=False, ignore_index=True
+    )

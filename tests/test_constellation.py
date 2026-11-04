@@ -426,6 +426,16 @@ def test_payload_marks_enabled_groups(scene):
     assert flags["gps-ops"] is False
 
 
+def test_payload_ships_chart_highlights_as_sorted_unique_ids(scene):
+    """The Analysis tab's chart selection reaches the renderer through this field."""
+    payload = scene.payload(highlight_ids=[25544, 43013, 25544])
+    assert payload["highlight_ids"] == [25544, 43013]
+
+    # An empty list means "nothing highlighted", which is explicit rather than missing.
+    assert scene.payload()["highlight_ids"] == []
+    assert scene.payload(highlight_ids=[])["highlight_ids"] == []
+
+
 def test_selection_includes_an_earth_fixed_track(scene):
     payload = scene.payload(selection=25544)
     track = payload["selected_track"]

@@ -20,3 +20,7 @@ skyfield>=1.55,<2
 # Data manipulation for the EDA phase and for tabular orbital summaries.
 pandas>=2.1,<3
 numpy>=1.26,<3
+
+# Interactive charts in the Analysis tab (Phase 2). Plotly is what Streamlit renders
+# natively and what the chart -> globe selection bridge is built on.
+plotly>=5.20,<7

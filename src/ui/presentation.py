@@ -138,6 +138,7 @@ class ConstellationScene:
         *,
         enabled_groups: Iterable[str] | None = None,
         selection: int | None = None,
+        highlight_ids: Iterable[int] | None = None,
         include_keyframes: bool = True,
         selected_when: datetime | None = None,
     ) -> dict:
@@ -155,6 +156,7 @@ class ConstellationScene:
             group_specs=GROUP_SPECS,
             enabled_groups=groups,
             selection=selection,
+            highlight_ids=highlight_ids,
             selected_track=track,
             include_keyframes=include_keyframes,
         )

@@ -465,25 +465,40 @@ drives it in a real headless browser and asserts that markers, label, rings and
 track reached the renderer with no console errors (it needs `selenium` and a Chrome
 or Edge install; see `requirements-dev.txt`).
 
-### Analysis layer (Phase 2, stage 1)
+### Analysis tab (Phase 2)
 
 `src/analysis/` turns the loaded scene into one documented DataFrame and computes the
-statistics the Analysis tab will present. It imports no Streamlit and fetches nothing:
-the analysis and the globe always describe the same snapshot.
+statistics the Analysis tab presents. It imports no Streamlit and fetches nothing: the tab
+and the globe always describe the same snapshot, elements and anchor instant.
 
 | Module | Contents |
 |---|---|
 | `provenance.py` | Registry of every column: provenance class (identity / grouping / element / derived / propagated), unit and source |
-| `frame.py` | `catalog_frame(scene)` -> one row per object; `validate_frame()` enforces the registry |
-| `stats.py` | `describe`, `missing_report`, `freshness`, `composition`, `outliers`, `correlation_matrix`, `pooled_vs_within` |
+| `frame.py` | `catalog_frame(scene)` -> one row per object; `classify_regime()` (LEO/MEO/GEO/HEO); `validate_frame()` enforces the registry |
+| `stats.py` | `describe`, `missing_report`, `freshness`, `composition`, `regime_counts`, `add_stratum`, `outliers`, `correlation_matrix`, `per_group_correlations`, `pooled_vs_within` |
+| `figures.py` | Plotly builders for the five sections, plus `selection_norad_ids()` (chart click -> NORAD ids) |
+| `src/ui/analysis_tab.py` | The tab itself: controls, charts, tables and the methodological captions |
 
-The distinction the registry enforces is not decorative: `semi_major_axis_km - 6378.137`
-is **681 km wrong** as an altitude for `FREGAT DEB` (e = 0.093) and right to 7.5 km for
+![Analysis tab](docs/screenshots/analysis-tab.png)
+
+The tab has five sections, in the assignment's priority order: orbital regimes (altitude vs
+inclination, with regime as marker shape), distributions (box or violin, groupable by
+constellation or by constellation *and* regime), freshness and missing-data audit, outlier
+diagnostics (IQR fence and modified z-score, with a configurable heterogeneity heuristic and
+optional regime segmentation) and pooled-vs-within correlations with the per-group evidence.
+
+Selecting points on the regime chart (box or lasso in the Plotly modebar) highlights the
+same satellites on the Globe tab through `payload.highlight_ids`; the screenshot below shows
+the lower half of the page, including the flagged-observation table and the correlation audit.
+
+![Analysis tab, lower sections](docs/screenshots/analysis-tab-lower.png)
+
+The distinction the registry enforces is not decorative: `semi_major_axis_km - 6378.137` is
+**681 km wrong** as an altitude for `FREGAT DEB` (e = 0.093) and right to 7.5 km for
 near-circular orbits, so both columns exist and neither stands in for the other. See
-`docs/technical_decisions.md` D21 and D22 for the statistical choices (Spearman, no
-p-values, no imputation, MAD-degeneracy handling) and for the finding that a group can be
-*multi-modal* rather than contaminated - 31% of the `weather` group is flagged on altitude
-because it contains both LEO and GEO platforms.
+`docs/technical_decisions.md` D21-D23 for the statistical choices (Spearman, no p-values, no
+imputation, MAD-degeneracy handling, stratification before interpretation) and for why a
+large "outlier" share is reported as *heterogeneity* rather than as contaminated data.
 
 ---
 
@@ -497,7 +512,7 @@ because it contains both LEO and GEO platforms.
 | D | Streamlit + interactive Globe.gl Earth, ISS marker, orbit track, info panel | **done** |
 | E | Time slider/playback, richer selection, focus controls, freshness badge | next |
 | F | GPS-OPS and a bounded Starlink subset, rendering performance | pending |
-| Phase 2 | EDA: statistics, correlations, missing data, outliers, in-app insights | **in progress** (data + statistics layer done; Analysis tab next) |
+| Phase 2 | EDA: statistics, correlations, missing data, outliers, in-app insights | **done** - Analysis tab with regime scatter, distributions, freshness/missing audit, outlier diagnostics and pooled-vs-within correlations |
 | Phase 3 | LLM-grounded orbital analysis and natural-language explanations | deferred |
 
 ---

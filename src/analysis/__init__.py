@@ -15,9 +15,13 @@ snapshot the globe is already showing.
 from __future__ import annotations
 
 from src.analysis.frame import (
+    GEO_BAND_KM,
+    LEO_APOGEE_KM,
     MU_KM3_S2,
+    REGIMES,
     WGS84_A_KM,
     catalog_frame,
+    classify_regime,
     column_docs,
     validate_frame,
 )

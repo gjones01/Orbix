@@ -100,6 +100,7 @@ def build_constellation_payload(
     group_specs: Sequence[Any],
     enabled_groups: Iterable[str],
     selection: int | None = None,
+    highlight_ids: Sequence[int] | None = None,
     selected_track: Sequence[Any] | None = None,
     include_keyframes: bool = True,
     truncated: bool = False,
@@ -120,6 +121,10 @@ def build_constellation_payload(
         changing a filter never needs new data.
     selection:
         NORAD ID to highlight, or ``None``.
+    highlight_ids:
+        NORAD IDs to emphasise with a larger marker, set from the Analysis tab's chart
+        selection. Independent of ``selection``, which is the globe's own click and also
+        draws an orbit trail.
     selected_track:
         Pre-computed ``[lat, lng, alt_ratio]`` points for the selected satellite.
     include_keyframes:
@@ -177,6 +182,10 @@ def build_constellation_payload(
         ],
         "satellites": metadata,
         "selection": selection,
+        # NORAD IDs emphasised from the Analysis tab. Always a list: an empty list means
+        # "nothing highlighted", which is different from the field being absent.
+        "highlight_ids": sorted({int(value) for value in highlight_ids})
+        if highlight_ids else [],
         "selected_track": list(selected_track) if selected_track else None,
         "limits": {
             "marker_radius": marker_radius,

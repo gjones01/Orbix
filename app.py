@@ -26,6 +26,7 @@ from src.ui.loading import (
     clear_scene_cache,
     load_constellation_cached,
 )
+from src.ui.analysis_tab import render_analysis
 from src.ui.panels import render_error, render_scene_report, render_selected
 from src.ui.presentation import ConstellationScene, default_groups
 
@@ -185,42 +186,56 @@ def main() -> None:
         scene.catalog.retrieved_at.isoformat(),
     )
     include_keyframes = st.session_state.get("orbix_scene_signature") != signature
-    payload = scene.payload(
-        enabled_groups=groups,
-        selection=selected,
-        include_keyframes=include_keyframes,
-    )
-    payload_bytes = len(str(payload))
-    st.session_state["orbix_scene_signature"] = signature
 
-    event = globe_component(payload, height=GLOBE_HEIGHT, key=COMPONENT_KEY)
-    if event and event.get("event") == "select":
-        norad_id = int(event["norad_id"])
-        # The payload above carried the *previous* selection, so re-run once with the
-        # new one: that is what brings back the selected satellite's trail. Guarded so
-        # a repeated event cannot loop.
-        if st.session_state.get("orbix_selected") != norad_id:
-            st.session_state["orbix_selected"] = norad_id
-            st.session_state["orbix_last_event"] = event
-            st.rerun()
-        selected = norad_id
+    # The Analysis tab drives a highlight through session state; read it before building
+    # the payload so the globe and the chart agree within the same run.
+    highlight_ids = sorted(st.session_state.get("orbix_highlight_ids") or [])
 
-    left, right = st.columns([1.15, 1], gap="medium")
-    with left:
-        render_selected(scene, selected)
-    with right:
-        render_scene_report(scene, payload_bytes)
+    globe_tab, analysis_tab = st.tabs(["Globe", "Analysis"])
 
-    last_event = st.session_state.get("orbix_last_event")
-    caption = (
-        f"Orbital prediction from CelesTrak elements &middot; playback window "
-        f"{scene.plan.start:%H:%M}\u2013{scene.plan.end:%H:%M} UTC, forward from load"
-        f" &middot; filtering and playback run in the browser without rerunning "
-        f"Streamlit"
-    )
-    if last_event:
-        caption += f" &middot; last event: select {last_event.get('norad_id')}"
-    st.markdown(f'<div class="ox-caption">{caption}</div>', unsafe_allow_html=True)
+    with globe_tab:
+        payload = scene.payload(
+            enabled_groups=groups,
+            selection=selected,
+            highlight_ids=highlight_ids,
+            include_keyframes=include_keyframes,
+        )
+        payload_bytes = len(str(payload))
+        st.session_state["orbix_scene_signature"] = signature
+
+        event = globe_component(payload, height=GLOBE_HEIGHT, key=COMPONENT_KEY)
+        if event and event.get("event") == "select":
+            norad_id = int(event["norad_id"])
+            # The payload above carried the *previous* selection, so re-run once with the
+            # new one: that is what brings back the selected satellite's trail. Guarded so
+            # a repeated event cannot loop.
+            if st.session_state.get("orbix_selected") != norad_id:
+                st.session_state["orbix_selected"] = norad_id
+                st.session_state["orbix_last_event"] = event
+                st.rerun()
+            selected = norad_id
+
+        left, right = st.columns([1.15, 1], gap="medium")
+        with left:
+            render_selected(scene, selected)
+        with right:
+            render_scene_report(scene, payload_bytes)
+
+        last_event = st.session_state.get("orbix_last_event")
+        caption = (
+            f"Orbital prediction from CelesTrak elements &middot; playback window "
+            f"{scene.plan.start:%H:%M}\u2013{scene.plan.end:%H:%M} UTC, forward from load"
+            f" &middot; filtering and playback run in the browser without rerunning "
+            f"Streamlit"
+        )
+        if highlight_ids:
+            caption += f" &middot; {len(highlight_ids)} highlighted from Analysis"
+        if last_event:
+            caption += f" &middot; last event: select {last_event.get('norad_id')}"
+        st.markdown(f'<div class="ox-caption">{caption}</div>', unsafe_allow_html=True)
+
+    with analysis_tab:
+        render_analysis(scene)
 
 if __name__ == "__main__":
     main()

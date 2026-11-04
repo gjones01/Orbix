@@ -19,8 +19,10 @@ import pytest
 from src.analysis import stats
 from src.analysis.frame import (
     MU_KM3_S2,
+    REGIMES,
     WGS84_A_KM,
     catalog_frame,
+    classify_regime,
     column_docs,
     validate_frame,
 )
@@ -48,6 +50,8 @@ def synthetic(**values: list[float]) -> pd.DataFrame:
     frame["name"] = [f"OBJ{index}" for index in range(n)]
     if "constellation" not in frame.columns:
         frame["constellation"] = "A"
+    if "regime" not in frame.columns:
+        frame["regime"] = "LEO"
     return frame
 
 
@@ -267,9 +271,41 @@ def test_pooled_correlation_hides_a_sign_flip():
 
     assert row["within_median"] == pytest.approx(-1.0)
     assert row["pooled_rho"] > 0.2
-    assert bool(row["sign_flip"]) is True
-    assert bool(row["confounded"]) is True
+    # Every group is negative while the pooled coefficient is positive: this is the narrow
+    # condition that earns the word "reversal", and it is reported as such.
+    assert row["same_sign_share"] == pytest.approx(0.0)
+    assert row["reversed_groups"] == 2
+    assert bool(row["simpson_pattern"]) is True
     assert row["gap"] == pytest.approx(row["pooled_rho"] + 1.0)
+
+
+def test_a_magnitude_gap_without_sign_change_is_not_a_reversal():
+    """The audit requested: a large difference in strength is NOT a sign reversal.
+
+    Each group is the same shape: y rises with x within half the range and resets, so the
+    within-group coefficient is a modest positive number. Group B then repeats that shape
+    at a much higher y, so pooling produces a strong positive coefficient that no individual
+    group shows. Direction never disagrees - every group is positive, the pooled value is
+    positive - but the magnitudes differ by a lot. The report must call that a material
+    difference and must NOT claim a reversal or Simpson's paradox.
+    """
+    shape = list(range(10)) * 2
+    group_a = synthetic(altitude_km=list(range(20)), inclination_deg=shape)
+    group_b = synthetic(altitude_km=list(range(100, 120)),
+                        inclination_deg=[100 + value for value in shape])
+    group_b["constellation"] = "B"
+    frame = pd.concat([group_a, group_b], ignore_index=True)
+
+    row = stats.pooled_vs_within(
+        frame, ["altitude_km", "inclination_deg"], min_n=10
+    ).iloc[0]
+
+    assert row["within_median"] > 0.2                     # same, positive direction
+    assert row["pooled_rho"] > row["within_median"]
+    assert row["same_sign_share"] == pytest.approx(1.0)    # no group disagrees
+    assert row["reversed_groups"] == 0
+    assert bool(row["simpson_pattern"]) is False           # no reversal claimed
+    assert bool(row["material_difference"]) is True        # but the sizes differ
 
 
 def test_correlation_is_undefined_for_a_constant_group():
@@ -285,7 +321,7 @@ def test_correlation_is_undefined_for_a_constant_group():
     )
     row = comparison.iloc[0]
 
-    assert row["n_groups"] == 1                 # only group A is defined
+    assert row["n_groups_defined"] == 1         # only group A is defined
     assert row["undefined_groups"] == 1         # and group B is reported, not hidden
     matrix = stats.correlation_matrix(
         frame, ["inclination_deg", "altitude_km"], by="B"
@@ -313,6 +349,125 @@ def test_freshness_identifies_the_oldest_element_set():
     assert report["max_age_h"] == pytest.approx(100.0)
     assert int(report["stale_count"]) == 1          # 100 h > 84 h
     assert report["oldest_name"] == "ANCIENT"
+
+
+# --------------------------------------------------------------- regimes
+
+
+def test_regime_boundaries_are_applied_in_the_documented_order():
+    """Fixed km boundaries, checked at the edges and for the eccentric overrides."""
+    assert classify_regime(6778.0, 6778.0, 0.0004) == "LEO"       # ISS
+    assert classify_regime(26500.0, 26600.0, 0.009) == "MEO"      # GPS
+    assert classify_regime(42160.0, 42170.0, 0.0002) == "GEO"     # GEO weather
+    assert classify_regime(6600.0, 46000.0, 0.74) == "HEO"        # GTO debris
+    # e >= 0.25 wins even though the perigee is inside LEO: the whole orbit is not LEO.
+    assert classify_regime(6700.0, 44000.0, 0.30) == "HEO"
+    # Just outside the LEO ceiling and not in the GEO band -> the MEO bucket.
+    assert classify_regime(8380.0, 8390.0, 0.001) == "MEO"
+    assert classify_regime(float("nan"), 8000.0, 0.001) == "unknown"
+
+
+def test_regime_is_a_documented_derived_column(frame):
+    assert kind_of("regime") is ColumnKind.DERIVED
+    assert set(frame["regime"].astype(str)) <= set(REGIMES) | {"unknown"}
+    validate_frame(frame)      # regime must not introduce nulls
+
+
+def test_regime_counts_exposes_a_mixed_group():
+    """The weather case: one group, two populations, visible in a crosstab."""
+    leo = synthetic(altitude_km=[800.0, 810.0])
+    geo = synthetic(altitude_km=[35_786.0, 35_790.0])
+    geo["regime"] = "GEO"
+    frame = pd.concat([leo, geo], ignore_index=True)
+    frame["constellation"] = "weather"
+
+    table = stats.regime_counts(frame).set_index("constellation")
+    assert int(table.loc["weather", "LEO"]) == 2
+    assert int(table.loc["weather", "GEO"]) == 2
+
+
+def test_add_stratum_preserves_every_row_and_column():
+    """Stratification must not delete or rewrite the observations it groups."""
+    leo = synthetic(altitude_km=[800.0, 810.0])
+    geo = synthetic(altitude_km=[35_786.0, 35_790.0])
+    geo["regime"] = "GEO"
+    frame = pd.concat([leo, geo], ignore_index=True)
+    frame["constellation"] = "weather"
+
+    stratified = stats.add_stratum(frame)
+    assert len(stratified) == len(frame)
+    assert sorted(stratified["norad_id"]) == sorted(frame["norad_id"])
+    assert set(stratified["stratum"]) == {"weather / LEO", "weather / GEO"}
+    # The original frame is untouched.
+    assert "stratum" not in frame.columns
+    assert stats.add_stratum(frame, with_regime=False)["stratum"].unique().tolist() == [
+        "weather"
+    ]
+
+
+def test_stratifying_stops_a_legitimate_population_being_called_outliers():
+    """Requirement 1, as a test: stratify first, then the flags go away.
+
+    Unstratified, a weather-like group (60 LEO + 15 GEO) flags the 15 GEO platforms as
+    outliers and reports the group as heterogeneous. Stratified by constellation *and*
+    regime, each stratum is internally consistent and the flags disappear. The objects were
+    never the problem.
+    """
+    leo = synthetic(altitude_km=[800.0 + i for i in range(60)])
+    geo = synthetic(altitude_km=[35_786.0] * 15)
+    geo["regime"] = "GEO"
+    frame = pd.concat([leo, geo], ignore_index=True)
+    frame["constellation"] = "weather"
+
+    pooled_summary, pooled_flagged = stats.outliers(frame, "altitude_km")
+    assert pooled_summary.iloc[0]["n_flagged"] == 15
+    assert bool(pooled_summary.iloc[0]["heterogeneous"]) is True
+
+    stratified = stats.add_stratum(frame)
+    summary, flagged = stats.outliers(stratified, "altitude_km", by="stratum")
+    assert set(summary["group"]) == {"weather / LEO", "weather / GEO"}
+    assert int(summary["n_flagged"].sum()) == 0
+    assert flagged.empty
+    assert not summary["heterogeneous"].any()
+
+
+def test_heterogeneity_threshold_is_a_configurable_heuristic():
+    """The same data, two thresholds, two honest reports - and no rows removed."""
+    frame = synthetic(altitude_km=[800.0 + i for i in range(60)] + [35_786.0] * 15)
+
+    _, flagged_at_50 = stats.outliers(frame, "altitude_km", heterogeneous_pct=50.0)
+    summary_at_50, _ = stats.outliers(frame, "altitude_km", heterogeneous_pct=50.0)
+    summary_at_5, _ = stats.outliers(frame, "altitude_km", heterogeneous_pct=5.0)
+
+    assert bool(summary_at_50.iloc[0]["heterogeneous"]) is False   # 20% < 50%
+    assert bool(summary_at_5.iloc[0]["heterogeneous"]) is True     # 20% > 5%
+    # The observations are reported identically either way; only the interpretation moves.
+    assert set(flagged_at_50["norad_id"]) == set(
+        stats.outliers(frame, "altitude_km", heterogeneous_pct=5.0)[1]["norad_id"]
+    )
+    assert len(frame) == 75
+
+
+def test_per_group_correlations_explains_each_missing_coefficient():
+    """Undefined coefficients are reported with a reason, not dropped."""
+    varying = synthetic(altitude_km=[1.0, 2.0, 3.0, 4.0],
+                        inclination_deg=[1.0, 2.0, 3.0, 4.0])
+    constant = synthetic(altitude_km=[1.0, 2.0, 3.0, 4.0], inclination_deg=[53.0] * 4)
+    constant["constellation"] = "B"
+    tiny = synthetic(altitude_km=[1.0, 2.0], inclination_deg=[1.0, 2.0])
+    tiny["constellation"] = "C"
+    frame = pd.concat([varying, constant, tiny], ignore_index=True)
+
+    report = stats.per_group_correlations(
+        frame, "altitude_km", "inclination_deg", min_n=3
+    ).set_index("group")
+
+    assert bool(report.loc["A", "defined"]) is True
+    assert report.loc["A", "rho"] == pytest.approx(1.0)
+    assert not report.loc["B", "defined"]
+    assert "constant" in report.loc["B", "reason"]
+    assert not report.loc["C", "defined"]
+    assert "complete pairs" in report.loc["C", "reason"]
 
 
 # ---------------------------------------------------------------------- real data

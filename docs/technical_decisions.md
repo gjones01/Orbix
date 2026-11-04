@@ -398,6 +398,39 @@ the same warning from the other direction: pooled numbers describe the sample
 composition, not satellites.
 
 
+## D23 – Stratify before interpreting, and never claim a reversal that is not there
+
+**Decision.** A contaminated-looking group is treated as a *stratification* problem first.
+`stats.add_stratum()` splits each constellation by the element-derived orbital regime, and
+every relevant view (distributions, outliers, correlations) can be re-run on those strata.
+The heterogeneity threshold is a parameter (`heterogeneous_pct`), not a constant of nature.
+
+**Why.** On the real snapshot the `weather` group is 74 objects: 51 LEO at ~500 km and 22
+GEO at 35 786 km. Pooled, 23 of 74 (31%) sit outside the LEO fence and would be reported as
+outliers - but METEOSAT and GOES are not anomalies, they are a second population.
+Re-running the same rule per stratum (`weather / LEO`, `weather / GEO`) leaves **0 and 1**
+flags. The objects never changed; the grouping did. Starlink behaves the same way (13.1%
+flagged) because it occupies discrete shells at 350-570 km. Hence: flags are reported, rows
+are never deleted, and a high flag rate is displayed as evidence about the *group*.
+
+**Consequence for correlation reporting.** The earlier `sign_flip`/`confounded` pair was
+ambiguous and one label was simply wrong: `altitude_km ~ bstar` is -0.09 pooled and -0.68
+within groups, which is a large difference in **magnitude** with every group agreeing in
+sign (`same_sign_share = 1.0`, `reversed_groups = 0`). It was never a sign reversal. The
+report now carries `pooled_rho`, the per-group range with its n range, `gap`,
+`same_sign_share`, `reversed_groups`, `undefined_groups` and a `simpson_pattern` flag that
+is only set when *every* defined group has the opposite sign to the pooled coefficient (and
+at least two groups exist). On this snapshot `simpson_pattern` is false for every pair;
+`inclination_deg ~ period_min` does reverse in one group of four (stations +0.78 vs OneWeb
+-0.86), which the per-group table shows directly instead of being called a paradox.
+
+**Consequence for the UI.** Chart selection highlights satellites on the globe via
+`payload.highlight_ids` -> a per-point flag that enlarges markers. The globe's own click
+selection (with its orbit trail) is a separate channel, so a highlighted set and a selected
+object can coexist. The Python half and the renderer half are tested separately: a unit
+test for the payload field, a browser check that three ids produce three enlarged markers.
+
+
 ## Known limitations (as of end of Step F)
 
 1. **Playback sampling is a trade-off, and it is displayed.** At 12k satellites a

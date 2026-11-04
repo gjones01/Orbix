@@ -101,6 +101,12 @@ COLUMNS: tuple[ColumnSpec, ...] = (
                "a (1 - e)", "Geocentric radius. Deliberately not called altitude."),
     ColumnSpec("apogee_radius_km", "Apogee radius", "km", ColumnKind.DERIVED,
                "a (1 + e)", "Geocentric radius. Deliberately not called altitude."),
+    ColumnSpec("regime", "Orbital regime", "category", ColumnKind.DERIVED,
+               "classified from perigee/apogee radius and eccentricity",
+               "A CONVENTION with fixed km boundaries (see frame.GEO_BAND_KM), not a "
+               "physical law. Derived from mean elements, so an eccentric object can sit "
+               "outside its own regime at the anchor instant - compare with altitude_km "
+               "before trusting either."),
     ColumnSpec("altitude_km", "Altitude", "km", ColumnKind.PROPAGATED,
                "SGP4 -> ITRS -> WGS-84 geodetic height at the anchor instant",
                "Time-dependent: where the satellite was at the anchor, above the "

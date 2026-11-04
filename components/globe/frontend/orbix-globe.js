@@ -89,6 +89,7 @@ import * as THREE from './vendor/three.module.min.js';
     frameStats: { frames: 0, fps: 0, updateMs: 0, startedAt: 0 },
     hoverIndex: -1,
     lastSentSelection: null,
+    highlightCount: 0,
   };
 
   let layer = null;
@@ -104,6 +105,8 @@ import * as THREE from './vendor/three.module.min.js';
       this.colors = new Float32Array(count * 3);
       this.sizes = new Float32Array(count);
       this.visible = new Uint8Array(count);
+      // 1 where the Analysis tab highlighted the object: drawn larger, colour unchanged.
+      this.highlighted = new Uint8Array(count);
       this.keyframes = null;
       this.baseSize = 4.0;
       this.selectedIndex = -1;
@@ -182,6 +185,12 @@ import * as THREE from './vendor/three.module.min.js';
       this.geometry.attributes.size.needsUpdate = true;
     }
 
+    /** Flag satellites highlighted from the Analysis tab (1 = emphasised). */
+    setHighlights(flags) {
+      this.highlighted.set(flags);
+      this.geometry.attributes.size.needsUpdate = true;
+    }
+
     /** Interpolate every visible satellite to `tNorm` (0..1 of the window). */
     update(tNorm) {
       const kf = this.keyframes;
@@ -203,7 +212,8 @@ import * as THREE from './vendor/three.module.min.js';
         const lng = lngArr[base + a] + dlng * w;
         const alt = altArr[base + a] + (altArr[base + b] - altArr[base + a]) * w;
         this.placeVertex(i, lat, lng, alt);
-        this.sizes[i] = (i === this.selectedIndex) ? this.baseSize * 2.2 : this.baseSize;
+        this.sizes[i] = (i === this.selectedIndex) ? this.baseSize * 2.2
+          : (this.highlighted[i] ? this.baseSize * 1.9 : this.baseSize);
         drawn++;
       }
       this.geometry.attributes.position.needsUpdate = true;
@@ -441,6 +451,23 @@ import * as THREE from './vendor/three.module.min.js';
     redraw();
   }
 
+  /**
+   * Emphasise the satellites selected in the Analysis tab.
+   * Independent of `selection` (the globe's own click): this only enlarges markers, so a
+   * highlighted set and a selected object can coexist.
+   */
+  function applyHighlights(noradIds) {
+    const wanted = new Set((noradIds || []).map(Number));
+    const flags = new Uint8Array(state.metadata.length);
+    let count = 0;
+    for (let i = 0; i < state.metadata.length; i++) {
+      if (wanted.has(state.metadata[i].id)) { flags[i] = 1; count++; }
+    }
+    state.highlightCount = count;
+    if (layer) layer.setHighlights(flags);
+    redraw();
+  }
+
   function drawSelectedTrack(track) {
     if (!state.globe) return;
     if (!track || track.length < 2) {
@@ -499,6 +526,11 @@ import * as THREE from './vendor/three.module.min.js';
     // highlight never flickers; a scene change always applies the payload verbatim.
     if (payload.selection != null || sceneChanged) {
       applySelection(payload.selection);
+    }
+    // Highlight comes from the Analysis tab. An explicit list (even empty) is news; a
+    // missing field means an older payload and changes nothing.
+    if (Array.isArray(payload.highlight_ids)) {
+      applyHighlights(payload.highlight_ids);
     }
     drawSelectedTrack(payload.selected_track);
     redraw();
@@ -720,11 +752,13 @@ import * as THREE from './vendor/three.module.min.js';
       };
     },
     get simTime() { return currentTime(); },
+    get highlightCount() { return state.highlightCount || 0; },
     // Behaves like a real marker click: notifies Python so the payload comes back with
     // the selected satellite's trail.
     select: (index) => selectIndex(index, true),
     setPlaying: setPlaying,
     setTime: (t) => { state.tNorm = t; redraw(); },
+    setHighlights: (ids) => applyHighlights(ids),
     toggleGroup: (id, on) => {
       if (on) state.enabledGroups.add(id); else state.enabledGroups.delete(id);
       applyGroupFilters(false);

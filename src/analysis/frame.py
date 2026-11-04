@@ -55,6 +55,45 @@ NULLABLE_COLUMNS = (
     "element_set_no",
 )
 
+#: Orbital-regime boundaries, in geocentric kilometres of a *mean* orbit. These are a
+#: documented convention for stratification, not physics: the LEO ceiling is 2000 km of
+#: altitude above the equator, the geosynchronous band is the semi-major axis of a
+#: sidereal-day orbit (42164 km) +/- 1800 km, and "highly eccentric" is e >= 0.25.
+LEO_APOGEE_KM = 8378.0          # 6378.137 (equatorial radius) + 2000
+GEO_BAND_KM = (40_364.0, 43_964.0)
+HEO_ECCENTRICITY = 0.25
+
+#: Regime labels, in the order the UI lists them.
+REGIMES = ("LEO", "MEO", "GEO", "HEO")
+
+
+def classify_regime(
+    perigee_radius_km: float, apogee_radius_km: float, eccentricity: float
+) -> str:
+    """Classify one mean orbit into LEO / MEO / GEO / HEO.
+
+    Rules are applied in this order, so the result is deterministic:
+
+    1. ``e >= 0.25`` -> **HEO** (Molniya, geostationary transfer debris). Checked first
+       because an eccentric orbit's perigee can sit inside LEO while its apogee is at GEO.
+    2. ``apogee <= 8378 km`` -> **LEO** (the whole orbit stays below 2000 km altitude).
+    3. perigee and apogee both inside the geosynchronous band -> **GEO**.
+    4. otherwise -> **MEO** (everything between LEO and the GEO band, and anything above
+       the band that is not eccentric - the label is a bucket, not a claim).
+
+    NaN inputs return ``"unknown"`` rather than raising, so a frame with a missing element
+    does not lose its row.
+    """
+    if not all(np.isfinite([perigee_radius_km, apogee_radius_km, eccentricity])):
+        return "unknown"
+    if eccentricity >= HEO_ECCENTRICITY:
+        return "HEO"
+    if apogee_radius_km <= LEO_APOGEE_KM:
+        return "LEO"
+    if perigee_radius_km >= GEO_BAND_KM[0] and apogee_radius_km <= GEO_BAND_KM[1]:
+        return "GEO"
+    return "MEO"
+
 
 def _semi_major_axis_km(mean_motion_rev_day: float) -> float:
     """Semi-major axis from the Kozai mean motion (mean elements, no propagation)."""
@@ -144,6 +183,9 @@ def catalog_frame(scene: ConstellationScene) -> pd.DataFrame:
             "semi_major_axis_km": axis,
             "perigee_radius_km": axis * (1.0 - eccentricity),
             "apogee_radius_km": axis * (1.0 + eccentricity),
+            "regime": classify_regime(
+                axis * (1.0 - eccentricity), axis * (1.0 + eccentricity), eccentricity
+            ),
             # Propagated: valid only at the anchor instant.
             "altitude_km": np.nan,
             "latitude_deg": np.nan,
@@ -165,6 +207,7 @@ def catalog_frame(scene: ConstellationScene) -> pd.DataFrame:
         "intl_designator": "string",
         "constellation": "category",
         "groups": "string",
+        "regime": "category",
         "period_min": "float64",
         "rev_at_epoch": "float64",
         "element_set_no": "float64",
