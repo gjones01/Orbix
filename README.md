@@ -458,12 +458,32 @@ real captured CelesTrak payloads, and the clock is controllable so cache-expiry
 behaviour is deterministic. Propagation tests run entirely offline against
 Skyfield's built-in time tables.
 
-Expected result: **109 passed**.
+Expected result: **130 passed**.
 
 The globe itself cannot be verified from Python, so `scripts/smoke_test_ui.py`
 drives it in a real headless browser and asserts that markers, label, rings and
 track reached the renderer with no console errors (it needs `selenium` and a Chrome
 or Edge install; see `requirements-dev.txt`).
+
+### Analysis layer (Phase 2, stage 1)
+
+`src/analysis/` turns the loaded scene into one documented DataFrame and computes the
+statistics the Analysis tab will present. It imports no Streamlit and fetches nothing:
+the analysis and the globe always describe the same snapshot.
+
+| Module | Contents |
+|---|---|
+| `provenance.py` | Registry of every column: provenance class (identity / grouping / element / derived / propagated), unit and source |
+| `frame.py` | `catalog_frame(scene)` -> one row per object; `validate_frame()` enforces the registry |
+| `stats.py` | `describe`, `missing_report`, `freshness`, `composition`, `outliers`, `correlation_matrix`, `pooled_vs_within` |
+
+The distinction the registry enforces is not decorative: `semi_major_axis_km - 6378.137`
+is **681 km wrong** as an altitude for `FREGAT DEB` (e = 0.093) and right to 7.5 km for
+near-circular orbits, so both columns exist and neither stands in for the other. See
+`docs/technical_decisions.md` D21 and D22 for the statistical choices (Spearman, no
+p-values, no imputation, MAD-degeneracy handling) and for the finding that a group can be
+*multi-modal* rather than contaminated - 31% of the `weather` group is flagged on altitude
+because it contains both LEO and GEO platforms.
 
 ---
 
@@ -477,7 +497,7 @@ or Edge install; see `requirements-dev.txt`).
 | D | Streamlit + interactive Globe.gl Earth, ISS marker, orbit track, info panel | **done** |
 | E | Time slider/playback, richer selection, focus controls, freshness badge | next |
 | F | GPS-OPS and a bounded Starlink subset, rendering performance | pending |
-| Phase 2 | EDA: statistics, correlations, missing data, outliers, in-app insights | deferred |
+| Phase 2 | EDA: statistics, correlations, missing data, outliers, in-app insights | **in progress** (data + statistics layer done; Analysis tab next) |
 | Phase 3 | LLM-grounded orbital analysis and natural-language explanations | deferred |
 
 ---

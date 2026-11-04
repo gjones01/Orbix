@@ -332,6 +332,72 @@ Verified in the browser: selection yields 2 path objects with 121 points.
 
 ---
 
+## D21 — Column provenance is a registry, not a convention
+
+**Decision.** Every column of the analysis frame is declared once, in
+`src/analysis/provenance.py`, with a provenance class (`identity`, `grouping`,
+`element`, `derived`, `propagated`), a unit and a source. `catalog_frame()` emits
+columns in exactly that order and `validate_frame()` refuses a frame that disagrees
+with the registry.
+
+**Why.** The dangerous mistakes in orbital data science are all provenance mistakes:
+treating a fitted mean element as a measurement of the satellite, or computing
+`semi_major_axis - R_earth` and calling it altitude. The second one is measurable on
+real data: for the 17 near-circular objects in the default snapshot the two agree to
+7.5 km, but for `FREGAT DEB` (e = 0.093) the naive formula is **681 km wrong**, because
+it ignores where in the orbit the object is. Both columns now exist, both are labelled,
+and a test asserts the relationship `|(a - R) - h| <= a*e + 21 km` on every row.
+
+**Consequence.** Instantaneous speed is *absent* rather than estimated: `BatchSample`
+carries positions only, and a finite difference across 30 s keyframes is a chord
+average, not a speed. There is a comment in the registry where the column would be.
+
+**Cost.** A new column means touching the registry, the frame and usually a note. That
+is the point: it cannot be added silently.
+
+
+## D22 — Statistical choices stated in code, and the failure modes named
+
+**Decision.** `src/analysis/stats.py` reports medians and quartiles alongside means,
+uses **Spearman** rather than Pearson, reports **no p-values**, never imputes, and
+detects outliers with two independent rules (Tukey IQR fence at k = 1.5 and the
+modified z-score `0.6745 (x - median) / MAD` at 3.5), recording which rule fired.
+
+**Why each one.**
+
+* *Spearman*: the relationships are monotone at best, and eccentricity and B* are
+  bounded and heavily skewed, so a rank correlation is the defensible summary.
+* *No p-values*: these are near-censuses of the tracked catalogue, not random samples.
+  At n = 11 957 everything is "significant"; a p-value would be noise dressed as
+  evidence. Effect size and n are reported instead.
+* *No imputation*: a zero-filled B* is a claim that the object has no drag. GPS proves
+  the point - all 32 objects publish B* = 0, so a B* analysis of GPS is meaningless,
+  and the frame says so instead of filling a gap.
+* *Two outlier rules*: they fail differently. MAD is zero whenever more than half a
+  group shares one value (GPS B*, inclination inside one Starlink shell), which is
+  detected and reported as `degenerate` with the IQR fence used alone.
+
+**The finding that changed the design.** On the real `weather` group, 23 of 74 objects
+(31%) are flagged on altitude - because the group mixes ~800 km polar platforms with
+GEO meteorological satellites (median 830 km, max 35 800 km). Calling those 23
+"outliers" would be wrong: they are a second population. `outliers()` therefore reports
+`outlier_pct` and a `heterogeneous` flag above 10%, and the note says to inspect the
+distribution. The same happens on Starlink (1 463 of 11 181 = 13.1%), which occupies
+discrete shells at 350-570 km. Conversely, an exact 50/50 two-mode mixture is *not*
+flagged, because the quartiles land on the modes - a test documents that, so nobody
+later "fixes" it as a bug.
+
+**Consequence for correlations.** `pooled_vs_within()` puts the pooled Spearman next to
+the within-group values. On the default snapshot, `altitude_km ~ bstar` is -0.12 pooled
+but -0.68 inside groups (aggregation bias); `inclination_deg ~ period_min` is -0.73
+pooled, -0.21 within, and flips sign in at least one group. By contrast
+`altitude_km ~ period_min` survives stratification (0.90 pooled, 0.85 within), which is
+the method distinguishing a real relationship from a compositional artefact. Adding
+Starlink (93.5% of the full frame) moves the pooled coefficients drastically, which is
+the same warning from the other direction: pooled numbers describe the sample
+composition, not satellites.
+
+
 ## Known limitations (as of end of Step F)
 
 1. **Playback sampling is a trade-off, and it is displayed.** At 12k satellites a
