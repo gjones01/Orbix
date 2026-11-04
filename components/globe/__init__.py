@@ -1,24 +1,30 @@
-"""Globe.gl 3D Earth rendered as a Streamlit custom component.
+"""Globe.gl constellation globe as a Streamlit custom component.
 
-Layout of this package::
+Layout::
 
     globe/
     ├── __init__.py      declared Streamlit component + public API
     ├── payload.py       Python -> JavaScript scene contract (pure, testable)
     └── frontend/        static assets served by Streamlit to the iframe
         ├── index.html
-        ├── orbix-globe.js   scene code + Streamlit protocol bridge
-        ├── style.css
+        ├── orbix-globe.js   Globe.gl Earth + batched satellite layer + HUD
+        ├── style.css        HUD panels, tooltip, star field
         ├── assets/          Earth textures (licensing in assets/README.md)
-        └── vendor/          pinned Globe.gl bundle
+        └── vendor/          pinned Globe.gl 2.34.4 and three.js r171
 
-Two-way communication
----------------------
-The component uses Streamlit's custom-component protocol directly (version 1), so
-the iframe can send values back to Python as well as receive them. Today it sends
-an event when a satellite marker is clicked; Step E uses the same channel for
-selection and playback controls. Camera movement happens entirely inside the
-iframe and never triggers a Python rerun.
+Why a custom component
+----------------------
+The front-end speaks Streamlit's component protocol (version 1) directly, so the
+iframe can send values back to Python as well as receive them. Marker clicks arrive in
+Python as ``{"event": "select", "norad_id": ...}``, while camera movement, filtering
+and simulation playback stay inside the iframe and never trigger a rerun.
+
+Why three.js is vendored separately
+-----------------------------------
+Globe.gl bundles three.js r171 internally but does not expose it. The satellite layer
+needs ``THREE.Points`` (one draw call for ~12k objects), so the identical revision is
+vendored alongside and imported as an ES module. Same revision means the objects are
+interchangeable with Globe.gl's own scene graph.
 """
 
 from __future__ import annotations
@@ -30,20 +36,26 @@ from typing import Any
 import streamlit.components.v1 as components
 
 from .payload import (
+    DEFAULT_MARKER_RADIUS,
     EARTH_RADIUS_KM,
     PAYLOAD_VERSION,
+    WindowPlan,
     altitude_ratio,
-    build_scene_payload,
+    build_constellation_payload,
+    plan_window,
     short_name,
 )
 
 __all__ = [
+    "DEFAULT_MARKER_RADIUS",
     "EARTH_RADIUS_KM",
-    "PAYLOAD_VERSION",
     "FRONTEND_DIR",
+    "PAYLOAD_VERSION",
+    "WindowPlan",
     "altitude_ratio",
-    "build_scene_payload",
+    "build_constellation_payload",
     "globe_component",
+    "plan_window",
     "short_name",
 ]
 
@@ -54,11 +66,7 @@ _COMPONENT_NAME = "orbix_globe"
 
 @lru_cache(maxsize=1)
 def _register() -> Any:
-    """Declare the component once, lazily.
-
-    Declared lazily so importing this package (in tests, or in tooling) never
-    touches Streamlit's component registry.
-    """
+    """Declare the component once, lazily, so imports stay side-effect free."""
     if not (FRONTEND_DIR / "index.html").exists():  # pragma: no cover
         raise FileNotFoundError(
             f"Globe front-end assets are missing from {FRONTEND_DIR}"
@@ -69,12 +77,12 @@ def _register() -> Any:
 def globe_component(
     payload: dict[str, Any],
     *,
-    height: int = 680,
+    height: int = 720,
     key: str = "orbix_globe",
 ) -> Any:
-    """Render the 3D globe and return whatever the front-end last sent.
+    """Render the constellation globe and return the front-end's last event.
 
-    Returns ``None`` until the user interacts with the globe, then a dict such as
-    ``{"event": "select", "norad_id": 25544, ...}``.
+    Returns ``None`` until the user clicks a satellite, then a dict such as
+    ``{"event": "select", "norad_id": 25544, "name": ..., "sim_time": ...}``.
     """
     return _register()(payload=payload, height=int(height), key=key, default=None)

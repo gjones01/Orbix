@@ -11,6 +11,7 @@
   --track: #57b0e8;
   --panel: rgba(8, 13, 21, 0.82);
   --panel-border: rgba(88, 182, 255, 0.18);
+  --mono: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -223,11 +224,191 @@ body::before {
   letter-spacing: 0.02em;
 }
 
-/* Globe.gl keeps an empty tooltip container in the DOM; without this it shows up
-   as a small blank box in the top-left corner of the globe. */
-.scene-tooltip:empty {
-  display: none !important;
+/* ---- HUD panels ---------------------------------------------------------- */
+
+.hud-panel {
+  position: absolute;
+  z-index: 6;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 9px 11px;
+  backdrop-filter: blur(6px);
+  font-size: 11px;
+  color: var(--ink);
+  min-width: 168px;
 }
+
+#panel-groups { top: 40px; left: 16px; }
+#panel-selection { top: 40px; right: 16px; min-width: 210px; max-width: 250px; }
+#panel-playback {
+  left: 16px;
+  right: 16px;
+  bottom: 30px;
+  min-width: 0;
+}
+
+.hud-heading {
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 6px;
+}
+
+.hud-metric {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(88, 182, 255, 0.12);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #b9cade;
+}
+
+.hud-metric b { color: #f2f7ff; font-weight: 600; }
+.dim { color: #6b7d92; }
+
+/* filter rows */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0;
+  cursor: pointer;
+  font-size: 11px;
+  color: #cfe0f0;
+}
+
+.filter-row input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.filter-row .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 5px currentColor;
+  flex: 0 0 auto;
+}
+
+.filter-name { flex: 1 1 auto; white-space: nowrap; }
+
+.filter-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #8fa5bd;
+  font-weight: 500;
+}
+
+.filter-count.bad { color: #ff9a9a; }
+
+/* selection panel */
+#selected-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f2f7ff;
+  letter-spacing: 0.02em;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#selected-meta { font-family: var(--mono); font-size: 10px; line-height: 1.45; }
+
+/* playback bar */
+.playback-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.playback-row button {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: #dbe6f2;
+  background: rgba(88, 182, 255, 0.12);
+  border: 1px solid rgba(88, 182, 255, 0.32);
+  border-radius: 5px;
+  padding: 5px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.playback-row button:hover { background: rgba(88, 182, 255, 0.22); }
+.playback-row button.active {
+  background: rgba(110, 231, 183, 0.16);
+  border-color: rgba(110, 231, 183, 0.45);
+  color: #b9f5da;
+}
+
+.playback-row select {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: #dbe6f2;
+  background: rgba(10, 16, 26, 0.9);
+  border: 1px solid rgba(88, 182, 255, 0.28);
+  border-radius: 5px;
+  padding: 4px 6px;
+}
+
+#time-slider {
+  flex: 1 1 auto;
+  accent-color: var(--accent);
+  height: 4px;
+  cursor: pointer;
+}
+
+#sim-clock {
+  font-size: 11px;
+  color: #e8f1fb;
+  white-space: nowrap;
+}
+
+#window-note {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+}
+
+/* hover tooltip */
+#tooltip {
+  position: absolute;
+  z-index: 8;
+  display: none;
+  max-width: 260px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: rgba(6, 10, 17, 0.95);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--ink);
+  pointer-events: none;
+}
+
+#tooltip.visible { display: block; }
+#tooltip b { display: block; color: #f2f7ff; font-weight: 600; margin-bottom: 2px; }
+#tooltip span { display: block; color: #8fa5bd; }
+
+/* Globe.gl keeps an empty tooltip container in the DOM; hide it. */
+.scene-tooltip:empty { display: none !important; }
+
+@media (max-width: 900px) {
+  #panel-selection { display: none; }
+  #panel-groups { min-width: 150px; }
+}
+
 
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation: none; }

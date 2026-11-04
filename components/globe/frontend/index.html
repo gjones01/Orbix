@@ -7,8 +7,7 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <!-- Star field and vignette live behind the WebGL canvas, which renders
-         with a transparent clear colour. -->
+    <!-- Star field and vignette sit behind the transparent WebGL canvas. -->
     <div id="starfield" aria-hidden="true"></div>
     <div id="stage">
       <div id="globe"></div>
@@ -20,13 +19,46 @@
       <span class="hud-sub">Earth-fixed</span>
     </header>
 
-    <div id="hud-legend">
-      <span class="legend-item"><i class="dot sat"></i>Satellite (true altitude)</span>
-      <span class="legend-item"><i class="dot track"></i>Orbit track &middot; 1 period</span>
-    </div>
+    <!-- Constellation filter (local: no data is re-requested) -->
+    <section id="panel-groups" class="hud-panel">
+      <div class="hud-heading">Constellations</div>
+      <div id="filters"></div>
+      <div class="hud-metric">
+        <span><b id="visible-count">0</b> / <span id="total-count">0</span> visible</span>
+        <span class="dim" id="fps-count">&mdash;</span>
+      </div>
+    </section>
+
+    <!-- Selection readout -->
+    <section id="panel-selection" class="hud-panel">
+      <div class="hud-heading">Selected</div>
+      <div id="selected-name">click a satellite</div>
+      <div id="selected-meta" class="dim">hover to identify &middot; click to select</div>
+    </section>
+
+    <!-- Simulation playback (runs entirely in the browser) -->
+    <section id="panel-playback" class="hud-panel">
+      <div class="playback-row">
+        <button id="play-button" type="button">&#9654; Play</button>
+        <button id="reset-button" type="button">&#8635; Reset</button>
+        <select id="speed-select" title="simulation speed">
+          <option value="10">10&times;</option>
+          <option value="30">30&times;</option>
+          <option value="60" selected>60&times;</option>
+          <option value="300">300&times;</option>
+          <option value="900">900&times;</option>
+        </select>
+        <input id="time-slider" type="range" min="0" max="1" step="0.001"
+               value="0" title="simulation time" />
+        <span id="sim-clock" class="mono">&mdash;</span>
+      </div>
+      <div id="window-note" class="dim"></div>
+    </section>
+
+    <div id="tooltip"></div>
 
     <div id="hud-attribution">
-      Earth imagery: NASA Blue Marble (public domain) &middot; Globe.gl / Three.js
+      Earth imagery: NASA Blue Marble (public domain) &middot; SGP4 / Skyfield &middot; CelesTrak
     </div>
 
     <div id="status" class="status">
@@ -37,6 +69,6 @@
     </div>
 
     <script src="./vendor/globe.gl.min.js"></script>
-    <script src="./orbix-globe.js"></script>
+    <script type="module" src="./orbix-globe.js"></script>
   </body>
 </html>

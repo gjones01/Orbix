@@ -1,14 +1,16 @@
-"""Orbix - interactive 3D satellite visualisation.
+"""Orbix - interactive 3D satellite constellation explorer.
 
-Streamlit entry point (Phase 1, Step D). Responsibilities are deliberately thin:
-configure the page, gather the user's data options, ask ``src/ui`` for a scene, and
-hand a JSON payload to the Globe.gl component. All orbital mathematics lives in
-``src/orbital/propagation.py``; all scene assembly lives in
-``src/ui/presentation.py``.
+Streamlit entry point (Phase 1, Steps E-F). Thin by design: configure the page,
+collect the user's data scope, ask ``src/ui`` for a scene, hand the payload to the
+Globe.gl component and render the panels that report what is loaded.
+
+Orbital mechanics live in ``src/orbital``; scene assembly in ``src/ui/presentation.py``.
+Filtering and simulation playback run inside the globe component so that neither
+triggers a Streamlit rerun.
 
 Run with::
 
-    streamlit run app.py
+    python -m streamlit run app.py
 """
 
 from __future__ import annotations
@@ -17,32 +19,43 @@ import html
 
 import streamlit as st
 
-from components.globe import build_scene_payload, globe_component
-from src.api.celestrak import CelestrakError, CelestrakNoDataAvailable
-from src.orbital.propagation import PropagationError
+from components.globe import globe_component
+from src.api.catalog import GROUP_SPECS
 from src.ui import theme
-from src.ui.loading import SCENE_TTL_SECONDS, clear_scene_cache, load_scene_cached
-from src.ui.presentation import ISS_CATALOG_NUMBER, Scene, format_utc
+from src.ui.loading import (
+    SCENE_TTL_SECONDS,
+    clear_scene_cache,
+    load_constellation_cached,
+)
+from src.ui.presentation import ConstellationScene, default_groups
 
-#: Height of the globe iframe in pixels. The globe is the centrepiece, so it gets
-#: the vertical space; the info panel is a compact column beside it.
-GLOBE_HEIGHT = 700
-
+GLOBE_HEIGHT = 720
 COMPONENT_KEY = "orbix_globe"
 
+WINDOW_CHOICES = {
+    "10 minutes": 10.0,
+    "20 minutes": 20.0,
+    "45 minutes": 45.0,
+    "90 minutes (one ISS orbit)": 90.0,
+}
 
-# --------------------------------------------------------------------------- #
-# Header and sidebar
-# --------------------------------------------------------------------------- #
 
-
-def render_header(scene: Scene | None) -> None:
-    """Wordmark, tagline and the data-provenance chip."""
-    chip = ""
-    if scene is not None:
-        chip = (
-            f'<span class="ox-chip {html.escape(scene.source)}">'
-            f"{html.escape(scene.source_label)}</span>"
+def render_header(scene: ConstellationScene | None) -> None:
+    """Wordmark, headline counts and the data-provenance chip."""
+    if scene is None:
+        chip = ""
+        meta = ""
+    else:
+        sources = {status.source for status in scene.catalog.groups if status.ok}
+        label = "LIVE" if sources == {"network"} else (
+            "MIXED" if "network" in sources else "CACHED"
+        )
+        chip_class = "live" if label == "LIVE" else "cache"
+        chip = f'<span class="ox-chip {chip_class}">{label}</span>'
+        meta = (
+            f'<span class="ox-tagline">{scene.unique_count:,} satellites &middot; '
+            f"{scene.rendered_count:,} propagated &middot; "
+            f"{scene.keyframes} keyframes</span>"
         )
     st.markdown(
         f"""
@@ -50,7 +63,8 @@ def render_header(scene: Scene | None) -> None:
           <div class="ox-brand">
             <span class="ox-wordmark">ORBIX</span>
             <span class="sep">&middot;</span>
-            <span class="ox-tagline">Orbital View &nbsp;/&nbsp; Phase 1</span>
+            <span class="ox-tagline">Constellation View &nbsp;/&nbsp; Phase 1</span>
+            {meta}
           </div>
           {chip}
         </div>
@@ -59,88 +73,148 @@ def render_header(scene: Scene | None) -> None:
     )
 
 
-def render_sidebar() -> tuple[bool, bool]:
-    """Data-source controls. Returns ``(offline, force_refresh)``."""
+def render_sidebar() -> tuple[tuple[str, ...], float, bool, bool]:
+    """Data-scope controls. Returns ``(groups, window_minutes, offline, refresh)``."""
     with st.sidebar:
         st.markdown(
             """
             <div style="display:flex;align-items:baseline;gap:8px;">
               <span style="font-size:1.02rem;font-weight:700;letter-spacing:0.26em;
                            color:#f2f7ff;">ORBIX</span>
-              <span style="font-size:0.62rem;letter-spacing:0.16em;
-                           color:#5f7186;text-transform:uppercase;">mission control</span>
+              <span style="font-size:0.62rem;letter-spacing:0.16em;color:#5f7186;
+                           text-transform:uppercase;">mission control</span>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        st.markdown("### Target")
-        st.markdown(
-            "**ISS (ZARYA)**  \n"
-            f"NORAD {ISS_CATALOG_NUMBER} &middot; International Space Station"
+        st.markdown("### Constellations to load")
+        st.caption(
+            "One CelesTrak request per group, cached for 2 hours. Changing a "
+            "filter inside the globe never re-downloads anything."
         )
+        defaults = set(default_groups())
+        chosen: list[str] = []
+        for spec in GROUP_SPECS:
+            enabled = st.checkbox(
+                f"{spec.label}",
+                value=spec.id in defaults,
+                key=f"group_{spec.id}",
+                help=spec.note,
+            )
+            if enabled:
+                chosen.append(spec.id)
+
+        st.markdown("### Playback window")
+        window_label = st.selectbox(
+            "Window width",
+            list(WINDOW_CHOICES),
+            index=1,
+            label_visibility="collapsed",
+            help="Keyframe density adapts to the number of satellites; the resulting "
+                 "interpolation error is shown under the globe.",
+        )
+        window_minutes = WINDOW_CHOICES[window_label]
 
         st.markdown("### Orbital data")
-        st.caption(
-            "CelesTrak General Perturbations (OMM/JSON). Orbix caches responses for "
-            "2 hours to respect CelesTrak's refresh cadence and usage policy."
-        )
         offline = st.toggle(
             "Offline mode (snapshots only)",
             value=False,
-            help="Never contact CelesTrak. Uses the newest snapshot committed under "
-            "data/snapshots/, so the app works with no network.",
+            help="Never contact CelesTrak. Uses the snapshots committed under "
+                 "data/snapshots/, so the app works with no network.",
         )
         force_refresh = st.checkbox(
-            "Force CelesTrak re-download",
+            "Force re-download",
             value=False,
             help="Ignores the 2-hour cache. CelesTrak may answer HTTP 403 "
-            "'not updated', which Orbix reports as a cache hit.",
+                 "'not updated', which Orbix reports as a cache hit.",
         )
-        if st.button("Refresh scene", type="secondary"):
+        if st.button("Reload scene", type="secondary"):
             clear_scene_cache()
             st.rerun()
 
-        st.markdown("### Propagation")
+        st.markdown("### Notes")
         st.caption(
-            "SGP4 via Skyfield. Positions are computed in Python; the globe only "
-            "draws what it is given. The orbit track covers the next period in the "
-            "Earth-fixed frame, so it drifts west each pass as the Earth turns."
+            "SGP4 propagation in Python; the browser only interpolates between the "
+            "supplied keyframes. Hover identifies, click selects, and the selected "
+            "object keeps its trail while you rotate."
         )
+    return tuple(chosen), window_minutes, offline, force_refresh
 
-        st.markdown("### About")
-        st.caption(
-            "Phase 1, Step D. Step E adds selection and playback; Phase 2 adds EDA, "
-            "Phase 3 the LLM assistant."
+
+def render_selected(scene: ConstellationScene, selected: int | None) -> None:
+    """Details of the selected satellite, or a hint when nothing is selected."""
+    if selected is None:
+        st.markdown(
+            '<div class="ox-card"><div class="ox-rows">'
+            '<div class="ox-row"><span class="ox-k">Selection</span>'
+            '<span class="ox-v">none</span></div>'
+            '<div class="ox-row"><span class="ox-k">How</span>'
+            '<span class="ox-v">hover to identify \u00b7 click to select</span></div>'
+            "</div></div>",
+            unsafe_allow_html=True,
         )
-    return offline, force_refresh
+        return
 
+    element = scene.element(selected)
+    if element is None:
+        st.markdown(
+            f'<div class="ox-notice">NORAD {selected} is not in the loaded catalogue.'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        return
 
-# --------------------------------------------------------------------------- #
-# Info panel
-# --------------------------------------------------------------------------- #
+    group_id = scene.group_of(selected) or ""
+    spec = next((item for item in GROUP_SPECS if item.id == group_id), None)
+    state = None
+    for index, norad_id in enumerate(scene.sample.norad_ids):
+        if int(norad_id) == int(selected):
+            rows = scene.sample.lat[index], scene.sample.lng[index], scene.sample.alt[index]
+            state = (float(rows[0][0]), float(rows[1][0]), float(rows[2][0]))
+            break
 
+    age = scene.plan.start - element.epoch
+    hours = age.total_seconds() / 3600.0
+    latitude = f"{state[0]:+.4f}\u00b0" if state else "\u2014"
+    longitude = f"{state[1]:+.4f}\u00b0" if state else "\u2014"
+    altitude = f"{state[2]:,.1f} km" if state else "\u2014"
 
-def render_info_panel(scene: Scene) -> None:
-    """Compact mission-control readout of the propagated state."""
-    rows = "\n".join(
-        f'<div class="ox-row"><span class="ox-k">{html.escape(fact.label)}</span>'
-        f'<span class="ox-v">{html.escape(fact.value)}'
-        + (f'<span class="ox-hint">{html.escape(fact.hint)}</span>' if fact.hint else "")
-        + "</span></div>"
-        for fact in scene.facts() + (scene.subpoint_fact(),)
+    since = next(
+        (sat for sat in scene.catalog.satellites.values() if sat.norad_id == selected),
+        None,
+    )
+    groups = ", ".join(
+        item.label for item in GROUP_SPECS
+        if since and item.id in since.groups
+    ) or (spec.label if spec else "\u2014")
+
+    rows_html = "".join(
+        f'<div class="ox-row"><span class="ox-k">{label}</span>'
+        f'<span class="ox-v">{value}</span></div>'
+        for label, value in (
+            ("Satellite", html.escape(element.object_name)),
+            ("NORAD catalog ID", f"{element.norad_cat_id}"),
+            ("Constellation", html.escape(groups)),
+            ("Sub-satellite point", f"{latitude}, {longitude}"),
+            ("Altitude", altitude),
+            ("Inclination", f"{element.inclination:.2f}\u00b0"),
+            ("Orbital period", f"{element.period_minutes:.2f} min"),
+            ("Element epoch", element.epoch.strftime("%Y-%m-%d %H:%M UTC")),
+            ("Element age", f"{hours:+.1f} h"),
+        )
     )
     st.markdown(
         f"""
         <div class="ox-card">
           <div class="ox-card-head">
-            <span class="kicker">Selected asset</span>
-            <span class="name">{html.escape(scene.object_name)}</span>
+            <span class="kicker">Selected satellite</span>
+            <span class="name">{html.escape(element.object_name)}</span>
           </div>
-          <div class="ox-rows">{rows}</div>
+          <div class="ox-rows">{rows_html}</div>
           <div class="ox-card-foot">
-            {html.escape(scene.source_detail)}<br />
-            Element epoch {html.escape(format_utc(scene.state.epoch))}
+            Position at the start of the playback window, Earth-fixed (WGS-84
+            geodetic). The globe trail spans one full orbital period.
           </div>
         </div>
         """,
@@ -148,33 +222,16 @@ def render_info_panel(scene: Scene) -> None:
     )
 
 
-# --------------------------------------------------------------------------- #
-# Error state
-# --------------------------------------------------------------------------- #
-
-
 def render_error(exc: Exception, offline: bool) -> None:
     """Explain a failed load without pretending there is data."""
     kind = type(exc).__name__
-    if isinstance(exc, CelestrakNoDataAvailable) and offline:
-        advice = (
-            "Offline mode is on and no saved snapshot covers this satellite. Turn "
-            "offline mode off, or fetch the data once with a network connection so "
-            "a snapshot is stored under data/snapshots/."
-        )
-    elif isinstance(exc, PropagationError):
-        advice = (
-            "The orbital elements were valid but SGP4 could not produce a position "
-            "for the requested instant. Try refreshing the element set."
-        )
-    elif isinstance(exc, CelestrakError):
-        advice = (
-            "CelesTrak could not be reached or returned an unusable response. Orbix "
-            "will not invent orbital data, so nothing is drawn. Retry, or switch on "
-            "offline mode to use the committed snapshot."
-        )
-    else:
-        advice = "An unexpected error occurred."
+    advice = {
+        True: "Offline mode is on: no snapshots cover the requested groups. Turn it "
+              "off to fetch them once, or load fewer constellations.",
+        False: "CelesTrak could not be reached or returned unusable data. Orbix will "
+               "not invent orbital elements, so nothing is drawn. Retry, or switch on "
+               "offline mode to use the committed snapshots.",
+    }[offline]
     st.markdown(
         f"""
         <div class="ox-notice">
@@ -187,77 +244,116 @@ def render_error(exc: Exception, offline: bool) -> None:
     )
 
 
-# --------------------------------------------------------------------------- #
-# Scene layout and entry point
-# --------------------------------------------------------------------------- #
-
-
-def render_scene(scene: Scene, offline: bool) -> None:
-    """Lay out the globe beside the information panel."""
-    payload = build_scene_payload(
-        satellite=scene.state,
-        track=scene.track,
-        height=GLOBE_HEIGHT,
-    )
-
-    globe_col, panel_col = st.columns([3.0, 1.25], gap="medium")
-
-    with globe_col:
-        event = globe_component(payload, height=GLOBE_HEIGHT, key=COMPONENT_KEY)
-        if event:
-            st.session_state["orbix_last_globe_event"] = event
-
-        caption = (
-            f"Simulation {format_utc(scene.state.timestamp)}"
-            " &nbsp;&middot;&nbsp; drag to rotate, scroll to zoom"
-            f" &nbsp;&middot;&nbsp; track {scene.state.period_minutes:.2f} min,"
-            f" {len(scene.track)} Earth-fixed samples"
-        )
-        st.markdown(f'<div class="ox-caption">{caption}</div>', unsafe_allow_html=True)
-
-        last_event = st.session_state.get("orbix_last_globe_event")
-        if last_event:
-            st.markdown(
-                '<div class="ox-caption">globe &rarr; python: '
-                f"{html.escape(str(last_event))}</div>",
-                unsafe_allow_html=True,
-            )
-
-    with panel_col:
-        render_info_panel(scene)
-        if scene.notes:
-            st.caption("Notes: " + "; ".join(scene.notes))
-        st.caption(
-            f"Scene cached for {SCENE_TTL_SECONDS}s so the view stays stable while "
-            "you interact; the satellite state is not real-time (see element age)."
-        )
-
-
 def main() -> None:
-    """Configure the page, load a scene, and render it."""
+    """Configure the page, load a scene, render the globe and the panels."""
     theme.configure_page()
     theme.inject_css()
 
-    offline, force_refresh = render_sidebar()
+    groups, window_minutes, offline, force_refresh = render_sidebar()
+
+    if not groups:
+        render_header(None)
+        st.markdown(
+            '<div class="ox-notice">Select at least one constellation in the sidebar.'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        return
 
     try:
-        with st.spinner("Acquiring orbital elements and propagating the orbit..."):
-            scene = load_scene_cached(
-                ISS_CATALOG_NUMBER,
-                offline=offline,
-                force_refresh=force_refresh,
-                when=None,
+        with st.spinner("Loading catalogue and propagating the constellation..."):
+            scene = load_constellation_cached(
+                groups, window_minutes, offline, force_refresh, None
             )
     except Exception as exc:  # noqa: BLE001 - surfaced to the user verbatim
         render_header(None)
         render_error(exc, offline)
         return
 
+    # Selection survives ordinary interactions: it lives in session state and is
+    # re-applied to the payload on every run.
+    if "orbix_selected" not in st.session_state:
+        st.session_state["orbix_selected"] = None
+    selected = st.session_state["orbix_selected"]
+
     render_header(scene)
-    render_scene(scene, offline)
+
+    # Keyframes are megabytes; only re-ship them when the scene actually changed.
+    signature = (
+        tuple(sorted(groups)),
+        round(window_minutes, 2),
+        scene.catalog.retrieved_at.isoformat(),
+    )
+    include_keyframes = st.session_state.get("orbix_scene_signature") != signature
+    payload = scene.payload(
+        enabled_groups=groups,
+        selection=selected,
+        include_keyframes=include_keyframes,
+    )
+    payload_bytes = len(str(payload))
+    st.session_state["orbix_scene_signature"] = signature
+
+    event = globe_component(payload, height=GLOBE_HEIGHT, key=COMPONENT_KEY)
+    if event and event.get("event") == "select":
+        st.session_state["orbix_selected"] = int(event["norad_id"])
+        st.session_state["orbix_last_event"] = event
+        selected = st.session_state["orbix_selected"]
+
+    left, right = st.columns([1.15, 1], gap="medium")
+    with left:
+        render_selected(scene, selected)
+    with right:
+        render_scene_report(scene, payload_bytes)
+
+    last_event = st.session_state.get("orbix_last_event")
+    caption = (
+        f"Scene cached {SCENE_TTL_SECONDS}s &middot; propagation window "
+        f"{scene.plan.start:%H:%M}\u2013{scene.plan.end:%H:%M} UTC &middot; "
+        f"filtering and playback run in the browser without rerunning Streamlit"
+    )
+    if last_event:
+        caption += f" &middot; last event: select {last_event.get('norad_id')}"
+    st.markdown(f'<div class="ox-caption">{caption}</div>', unsafe_allow_html=True)
+
+def render_scene_report(scene: ConstellationScene, payload_bytes: int) -> None:
+    """What was loaded, how it was sampled, and how accurate that sampling is."""
+    status_rows = []
+    for status in scene.catalog.groups:
+        spec = status.spec
+        css = "ok" if status.ok else "bad"
+        detail = (
+            f"{status.count:,} objects \u00b7 {status.label}"
+            if status.ok
+            else (status.error or "not loaded")
+        )
+        status_rows.append(
+            f'<div class="ox-row"><span class="ox-k">{html.escape(spec.label)}</span>'
+            f'<span class="ox-v {css}">{html.escape(detail)}</span></div>'
+        )
+    stale_note = (
+        f" \u00b7 {len(scene.skipped_stale):,} stale element set(s) skipped"
+        if scene.skipped_stale
+        else ""
+    )
+    st.markdown(
+        f"""
+        <div class="ox-card">
+          <div class="ox-card-head">
+            <span class="kicker">Loaded data</span>
+            <span class="name">{scene.unique_count:,} unique satellites</span>
+          </div>
+          <div class="ox-rows">{''.join(status_rows)}</div>
+          <div class="ox-card-foot">
+            De-duplicated by NORAD catalog ID across groups; duplicates are counted
+            once and keep every group they belong to.<br />
+            {html.escape(scene.plan.describe())}<br />
+            Payload to the browser: {payload_bytes / 1024.0:,.0f} KB{stale_note}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 if __name__ == "__main__":
     main()
-
-

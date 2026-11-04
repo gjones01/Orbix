@@ -1,186 +1,245 @@
-"""Assemble the satellite scene the UI displays.
+"""Assemble the constellation scene the UI displays.
 
-This module deliberately imports **no Streamlit**: it turns live data into plain
-dataclasses so that the numbers shown in the info panel can be unit-tested without
-starting a web server. ``src/ui/loader.py`` adds caching, and ``app.py`` renders.
+This module imports **no Streamlit** so the numbers behind the globe can be tested
+without a browser or a server. It orchestrates:
+
+``load_catalog``  (one CelesTrak request per group, de-duplicated by NORAD ID)
+        -> ``BatchPropagator`` (vectorised SGP4 for every object)
+        -> ``plan_window``     (how finely to sample the playback window)
+        -> ``BatchSample``     (lat/lng/alt for every satellite at every keyframe)
+        -> payload             (the JSON contract in ``components.globe.payload``)
+
+The window is sampled once per scene rather than re-propagated per browser frame, and
+the sampling density adapts to the constellation size so the payload stays bounded.
+The resulting interpolation error is computed and reported, never hidden.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Sequence
+from datetime import datetime, timedelta, timezone
+from typing import Iterable
 
-from src.api.celestrak import CelestrakClient, Freshness, GpElement
-from src.orbital.propagation import OrbitalState, propagate, propagate_series, utc_now
+from components.globe.payload import (
+    WindowPlan,
+    altitude_ratio,
+    build_constellation_payload,
+    plan_window,
+)
+from src.api.catalog import GROUP_SPECS, Catalog, Satellite, load_catalog
+from src.orbital.batch import BatchPropagator, BatchSample
+from src.orbital.propagation import propagate_series, utc_now
 
 __all__ = [
-    "ISS_CATALOG_NUMBER",
-    "DEFAULT_TRACK_SAMPLES",
-    "Fact",
-    "Scene",
-    "format_age",
-    "format_utc",
-    "format_utc_compact",
-    "load_scene",
+    "DEFAULT_WINDOW_MINUTES",
+    "MAX_ELEMENT_AGE",
+    "TRACK_SAMPLES",
+    "ConstellationScene",
+    "default_groups",
+    "load_constellation",
 ]
 
-ISS_CATALOG_NUMBER = 25544
+#: Total playback window width in minutes: long enough to see motion in every orbit
+#: type, short enough that keyframe sampling can stay fine.
+DEFAULT_WINDOW_MINUTES = 20.0
 
-#: Track resolution for one orbital period. 120 samples is ~46 s apart for the ISS,
-#: which renders as a smooth curve without a visible cost.
-DEFAULT_TRACK_SAMPLES = 120
+#: Refuse to propagate elements this far from the simulation window: SGP4 stays
+#: numerically stable, but the accuracy is long gone. Reported, never silent.
+MAX_ELEMENT_AGE = timedelta(days=30)
 
+#: Samples used for a selected satellite's orbit trail.
+TRACK_SAMPLES = 121
 
-def format_utc(moment: datetime) -> str:
-    """Format a timestamp as ``YYYY-MM-DD HH:MM:SS UTC`` for prose."""
-    return moment.strftime("%Y-%m-%d %H:%M:%S UTC")
-
-
-def format_utc_compact(moment: datetime) -> str:
-    """Compact ISO-style UTC stamp for the narrow information panel."""
-    return moment.strftime("%Y-%m-%d %H:%M:%SZ")
+UTC = timezone.utc
 
 
-def format_age(age: timedelta) -> str:
-    """Format an element age like ``+11.3 h`` or ``-2.0 d``."""
-    hours = age.total_seconds() / 3600.0
-    sign = "+" if hours >= 0 else "-"
-    magnitude = abs(hours)
-    if magnitude < 1.0:
-        return f"{sign}{magnitude * 60.0:.0f} min"
-    if magnitude < 48.0:
-        return f"{sign}{magnitude:.1f} h"
-    return f"{sign}{magnitude / 24.0:.1f} d"
+def default_groups() -> tuple[str, ...]:
+    """Groups enabled by default (everything except the very large Starlink set)."""
+    return tuple(spec.id for spec in GROUP_SPECS if spec.default_enabled)
 
 
 @dataclass(frozen=True)
-class Fact:
-    """One label/value pair in the information panel."""
+class ConstellationScene:
+    """Everything needed to draw the constellation and explain what is drawn.
 
-    label: str
-    value: str
-    hint: str = ""
+    Deliberately holds no ``BatchPropagator``: that object wraps C-extension state and
+    cannot be pickled, and the UI never needs to re-sample after construction. Keeping
+    the scene plain data is what lets Streamlit cache it.
+    """
 
-
-@dataclass(frozen=True)
-class Scene:
-    """Everything the UI needs to render one instant of one satellite."""
-
-    element: GpElement
-    state: OrbitalState
-    track: tuple[OrbitalState, ...]
-    freshness: Freshness
-    source: str
-    notes: tuple[str, ...] = ()
+    catalog: Catalog
+    sample: BatchSample
+    plan: WindowPlan
+    skipped_stale: tuple[int, ...] = ()
 
     @property
-    def object_name(self) -> str:
-        """Common name from the element set."""
-        return self.element.object_name
+    def unique_count(self) -> int:
+        """Number of unique satellites in the catalogue."""
+        return len(self.catalog)
 
     @property
-    def norad_id(self) -> int:
-        """NORAD catalog number."""
-        return self.element.norad_cat_id
+    def rendered_count(self) -> int:
+        """Satellites actually propagated (excludes stale elements)."""
+        return int(self.sample.shape[0])
 
     @property
-    def is_live(self) -> bool:
-        """True only if the element set was downloaded in this session."""
-        return self.source == "network"
+    def keyframes(self) -> int:
+        """Sampled instants in the playback window."""
+        return int(self.sample.shape[1])
 
-    @property
-    def source_label(self) -> str:
-        """Short provenance badge for the header."""
-        return {
-            "network": "LIVE",
-            "cache": "CACHED",
-            "snapshot": "SNAPSHOT",
-        }.get(self.source, self.source.upper())
+    def counts_by_group(self) -> dict[str, int]:
+        """How many unique objects each group contributes."""
+        return self.catalog.counts_by_group()
 
-    @property
-    def source_detail(self) -> str:
-        """Sentence explaining where the element set came from."""
-        return {
-            "network": "Element set downloaded from CelesTrak in this session.",
-            "cache": "Element set served from Orbix's local cache "
-                     "(CelesTrak refreshes GP data every 2 hours).",
-            "snapshot": "Element set loaded from a saved snapshot; CelesTrak was "
-                        "not re-queried.",
-        }.get(self.source, self.source)
+    def element(self, norad_id: int):
+        """Look up one element set by NORAD ID."""
+        satellite = self.catalog.satellites.get(int(norad_id))
+        return satellite.element if satellite else None
 
-    def facts(self) -> tuple[Fact, ...]:
-        """The information-panel rows, in a fixed order."""
-        state = self.state
-        return (
-            Fact("Satellite", self.object_name),
-            Fact("NORAD catalog ID", f"{self.norad_id}"),
-            Fact("Altitude", f"{state.altitude_km:,.1f} km", "above ellipsoid"),
-            Fact("Velocity", f"{state.speed_km_s:.3f} km/s", "inertial"),
-            Fact("Inclination", f"{state.inclination_deg:.2f}\u00b0"),
-            Fact("Orbital period", f"{state.period_minutes:.2f} min"),
-            Fact("Simulation time", format_utc_compact(state.timestamp)),
-            Fact("Element age", format_age(state.element_age), "since epoch"),
+    def group_of(self, norad_id: int) -> str | None:
+        """Primary group of one satellite."""
+        satellite = self.catalog.satellites.get(int(norad_id))
+        return satellite.primary_group if satellite else None
+
+    def selected_track(
+        self,
+        norad_id: int,
+        when: datetime | None = None,
+        samples: int = TRACK_SAMPLES,
+    ) -> tuple[tuple[float, float, float], ...]:
+        """Earth-fixed ``[lat, lng, alt_ratio]`` trail for one satellite.
+
+        Uses the single-satellite Skyfield path (the verified one) over one orbital
+        period starting at ``when``. Altitude is returned in globe-radius units, so the
+        renderer needs no conversion at all.
+        """
+        element = self.element(norad_id)
+        if element is None:
+            return ()
+        start = when or self.plan.start
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=UTC)
+        period_seconds = (element.period_minutes or 92.95) * 60.0
+        step = period_seconds / max(1, samples - 1)
+        times = [start + timedelta(seconds=step * index) for index in range(samples)]
+        states = propagate_series(element, times)
+        return tuple(
+            (
+                round(state.latitude_deg, 4),
+                round(state.longitude_deg, 4),
+                round(altitude_ratio(state.altitude_km), 5),
+            )
+            for state in states
         )
 
-    def subpoint_fact(self) -> Fact:
-        """Sub-satellite point, useful next to the globe."""
-        return Fact(
-            "Sub-satellite point",
-            f"{self.state.latitude_deg:+.2f}\u00b0, {self.state.longitude_deg:+.2f}\u00b0",
-            "WGS-84 geodetic",
+    def payload(
+        self,
+        *,
+        enabled_groups: Iterable[str] | None = None,
+        selection: int | None = None,
+        include_keyframes: bool = True,
+        selected_when: datetime | None = None,
+    ) -> dict:
+        """Build the JSON payload for the globe component."""
+        groups = tuple(enabled_groups) if enabled_groups is not None else default_groups()
+        track = (
+            self.selected_track(selection, selected_when)
+            if selection is not None
+            else None
+        )
+        return build_constellation_payload(
+            catalog=self.catalog,
+            sample=self.sample,
+            plan=self.plan,
+            group_specs=GROUP_SPECS,
+            enabled_groups=groups,
+            selection=selection,
+            selected_track=track,
+            include_keyframes=include_keyframes,
         )
 
+    def summary(self) -> str:
+        """One-line description of what was loaded."""
+        statuses = ", ".join(
+            f"{status.spec.label} {status.count}"
+            for status in self.catalog.groups
+            if status.ok
+        )
+        return f"{self.unique_count} unique satellites ({statuses})"
 
-def load_scene(
-    catalog_number: int = ISS_CATALOG_NUMBER,
+
+def load_constellation(
+    group_ids: Iterable[str] | None = None,
     *,
+    window_minutes: float = DEFAULT_WINDOW_MINUTES,
     offline: bool = False,
     force_refresh: bool = False,
     when: datetime | None = None,
-    track_samples: int = DEFAULT_TRACK_SAMPLES,
-) -> Scene:
-    """Fetch elements, propagate the current state, and sample one orbit.
+) -> ConstellationScene:
+    """Load, de-duplicate and sample a constellation over a playback window.
 
     Parameters
     ----------
-    catalog_number:
-        NORAD catalog number. Step D is ISS-only by design.
+    group_ids:
+        CelesTrak groups to load. ``None`` means every group in ``GROUP_SPECS``.
+    window_minutes:
+        Total playback window, centred on ``when``.
     offline:
-        Never contact CelesTrak; use the newest saved snapshot.
+        Serve from saved snapshots only.
     force_refresh:
-        Ask the API client to re-download even if its 2-hour cache is fresh.
-        CelesTrak may answer HTTP 403 "not updated", which the client treats as a
-        cache hit rather than an error.
+        Ignore the 2-hour cache (CelesTrak may answer 403 "not updated").
     when:
-        Simulation instant. Defaults to now (UTC); Step E drives this from a slider.
-    track_samples:
-        Number of Earth-fixed samples across one orbital period.
+        Centre of the window; defaults to now (UTC).
     """
-    client = CelestrakClient(offline=offline)
-    fetched = client.fetch_by_catalog_number(catalog_number, refresh=force_refresh)
-    element = fetched.elements[0]
-
-    moment = when or utc_now()
-    state = propagate(element, moment)
-
-    period_seconds = element.period_minutes * 60.0
-    if period_seconds <= 0:
-        raise ValueError(
-            f"{element.object_name} has no usable period; cannot build a track"
+    catalog = load_catalog(group_ids, offline=offline, force_refresh=force_refresh)
+    if not catalog.satellites:
+        details = "; ".join(
+            f"{status.spec.id}: {status.error or 'no records'}"
+            for status in catalog.groups
         )
-    step = period_seconds / max(1, track_samples)
-    times: Sequence[datetime] = [
-        moment + timedelta(seconds=step * index)
-        for index in range(int(track_samples) + 1)
-    ]
-    track = propagate_series(element, times)
+        raise ValueError("No satellites were loaded from any group (" + details + ")")
 
-    return Scene(
-        element=element,
-        state=state,
-        track=track,
-        freshness=fetched.freshness(),
-        source=fetched.source,
-        notes=fetched.notes,
+    centre = when or utc_now()
+    if centre.tzinfo is None:
+        raise ValueError("Simulation time must be timezone-aware")
+    half = timedelta(minutes=max(1.0, window_minutes) / 2.0)
+    start, end = centre - half, centre + half
+
+    # Guard against unbounded extrapolation from stale elements.
+    usable: list[Satellite] = []
+    skipped: list[int] = []
+    for satellite in sorted(catalog.satellites.values(), key=lambda s: s.norad_id):
+        if abs(start - satellite.element.epoch) > MAX_ELEMENT_AGE:
+            skipped.append(satellite.norad_id)
+        else:
+            usable.append(satellite)
+
+    if not usable:
+        raise ValueError(
+            "Every element set is older than the "
+            f"{MAX_ELEMENT_AGE.days}-day propagation limit"
+        )
+    if skipped:
+        # Drop them from the scene rather than render stale ghosts; the caller reports
+        # the count so nothing disappears silently.
+        catalog = Catalog(
+            satellites={sat.norad_id: sat for sat in usable},
+            groups=catalog.groups,
+            retrieved_at=catalog.retrieved_at,
+        )
+
+    propagator = BatchPropagator([sat.element for sat in usable])
+    plan = plan_window(start, end, len(usable))
+    times = [
+        start + timedelta(seconds=plan.interval_seconds * index)
+        for index in range(plan.keyframes)
+    ]
+    sample = propagator.sample(times)
+
+    return ConstellationScene(
+        catalog=catalog,
+        sample=sample,
+        plan=plan,
+        skipped_stale=tuple(skipped),
     )
+
