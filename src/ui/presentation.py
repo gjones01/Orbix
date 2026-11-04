@@ -39,7 +39,9 @@ __all__ = [
     "load_constellation",
 ]
 
-#: Total playback window width in minutes: long enough to see motion in every orbit
+#: Playback window length in minutes. The window starts at the scene's anchor time
+#: (now, when the scene is loaded) and runs forward: Orbix plays orbital predictions,
+#: it never rewinds behind the load instant. Long enough to see motion in every orbit
 #: type, short enough that keyframe sampling can stay fine.
 DEFAULT_WINDOW_MINUTES = 20.0
 
@@ -183,13 +185,15 @@ def load_constellation(
     group_ids:
         CelesTrak groups to load. ``None`` means every group in ``GROUP_SPECS``.
     window_minutes:
-        Total playback window, centred on ``when``.
+        Length of the playback window in minutes. The window starts at ``when`` and
+        runs **forward** from it.
     offline:
         Serve from saved snapshots only.
     force_refresh:
         Ignore the 2-hour cache (CelesTrak may answer 403 "not updated").
     when:
-        Centre of the window; defaults to now (UTC).
+        Start of the playback window; defaults to now (UTC). Playback never begins in
+        the past, so this is also the instant the simulation opens on.
     """
     catalog = load_catalog(group_ids, offline=offline, force_refresh=force_refresh)
     if not catalog.satellites:
@@ -199,17 +203,20 @@ def load_constellation(
         )
         raise ValueError("No satellites were loaded from any group (" + details + ")")
 
-    centre = when or utc_now()
-    if centre.tzinfo is None:
+    anchor = when or utc_now()
+    if anchor.tzinfo is None:
         raise ValueError("Simulation time must be timezone-aware")
-    half = timedelta(minutes=max(1.0, window_minutes) / 2.0)
-    start, end = centre - half, centre + half
+    start = anchor
+    end = start + timedelta(minutes=max(1.0, window_minutes))
 
-    # Guard against unbounded extrapolation from stale elements.
+    # Guard against unbounded extrapolation from stale elements. The worst case is the
+    # far end of the window, not its start, because playback runs forward from `start`.
     usable: list[Satellite] = []
     skipped: list[int] = []
     for satellite in sorted(catalog.satellites.values(), key=lambda s: s.norad_id):
-        if abs(start - satellite.element.epoch) > MAX_ELEMENT_AGE:
+        epoch = satellite.element.epoch
+        worst_age = max(abs(start - epoch), abs(end - epoch))
+        if worst_age > MAX_ELEMENT_AGE:
             skipped.append(satellite.norad_id)
         else:
             usable.append(satellite)

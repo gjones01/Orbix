@@ -229,7 +229,9 @@ is faster). The measurements are in `docs/technical_decisions.md` (D17).
 
 ### Simulation playback
 
-The window (10/20/45/90 min, centred on now) is sampled once in Python. Playback runs
+The playback window (10/20/45/90 min) is sampled once in Python and **starts at the
+instant the scene loads**, running forward from there: Orbix plays orbital
+*predictions*, it never rewinds behind the load instant. Playback runs
 entirely in the browser: Play/Pause, 10×–900× speed, Reset, and a scrub slider, with
 the simulation UTC clock shown in the bar.
 
@@ -243,6 +245,15 @@ displayed:
 |---|---|
 | Accuracy | sample finely enough that the chord error stays ≤ 1 km |
 | Payload budget | coarsen if `satellites × keyframes` would exceed ~2 MB of base64 |
+
+The playback bar reads, for example::
+
+    ▶ Play   ⟲ Reset   60×   [=======|==========]   2026-11-04 21:45:12Z
+    ● start 2026-11-04 21:25:12Z · range 0 → +20 min · orbital prediction, not live tracking
+    41 keyframes over 20 min (every 0.5 min); worst-case interpolation error ≈ 1.0 km
+
+so the window's start, the current simulation instant and the playable range are all
+visible at once.
 
 For the 777-satellite default that is 41 keyframes over 20 min (every 30 s, error
 ≈ 1.0 km). For all 11,958 satellites it is 10 keyframes over 20 min (every 2.2 min,

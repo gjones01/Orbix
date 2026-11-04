@@ -23,7 +23,6 @@ from components.globe import globe_component
 from src.api.catalog import GROUP_SPECS
 from src.ui import theme
 from src.ui.loading import (
-    SCENE_TTL_SECONDS,
     clear_scene_cache,
     load_constellation_cached,
 )
@@ -111,8 +110,10 @@ def render_sidebar() -> tuple[tuple[str, ...], float, bool, bool]:
             list(WINDOW_CHOICES),
             index=1,
             label_visibility="collapsed",
-            help="Keyframe density adapts to the number of satellites; the resulting "
-                 "interpolation error is shown under the globe.",
+            help="The simulation starts at load time and runs forward. This sets how "
+                 "far ahead it can play. Keyframe density adapts to the number of "
+                 "satellites; the resulting interpolation error is shown under the "
+                 "globe.",
         )
         window_minutes = WINDOW_CHOICES[window_label]
 
@@ -295,9 +296,15 @@ def main() -> None:
 
     event = globe_component(payload, height=GLOBE_HEIGHT, key=COMPONENT_KEY)
     if event and event.get("event") == "select":
-        st.session_state["orbix_selected"] = int(event["norad_id"])
-        st.session_state["orbix_last_event"] = event
-        selected = st.session_state["orbix_selected"]
+        norad_id = int(event["norad_id"])
+        # The payload above carried the *previous* selection, so re-run once with the
+        # new one: that is what brings back the selected satellite's trail. Guarded so
+        # a repeated event cannot loop.
+        if st.session_state.get("orbix_selected") != norad_id:
+            st.session_state["orbix_selected"] = norad_id
+            st.session_state["orbix_last_event"] = event
+            st.rerun()
+        selected = norad_id
 
     left, right = st.columns([1.15, 1], gap="medium")
     with left:
@@ -307,9 +314,10 @@ def main() -> None:
 
     last_event = st.session_state.get("orbix_last_event")
     caption = (
-        f"Scene cached {SCENE_TTL_SECONDS}s &middot; propagation window "
-        f"{scene.plan.start:%H:%M}\u2013{scene.plan.end:%H:%M} UTC &middot; "
-        f"filtering and playback run in the browser without rerunning Streamlit"
+        f"Orbital prediction from CelesTrak elements &middot; playback window "
+        f"{scene.plan.start:%H:%M}\u2013{scene.plan.end:%H:%M} UTC, forward from load"
+        f" &middot; filtering and playback run in the browser without rerunning "
+        f"Streamlit"
     )
     if last_event:
         caption += f" &middot; last event: select {last_event.get('norad_id')}"

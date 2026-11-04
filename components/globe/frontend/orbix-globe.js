@@ -474,14 +474,32 @@ import * as THREE from './vendor/three.module.min.js';
       const windowInfo = payload.window || {};
       const note = document.getElementById('window-note');
       if (note) note.textContent = windowInfo.note || '';
-      state.tNorm = Math.min(1, Math.max(0, state.tNorm));
+
+      // A new scene is anchored at "now": the simulation always opens on the start of
+      // its window, never part-way through a previous one.
+      state.tNorm = 0;
+      const range = document.getElementById('window-range');
+      if (range && windowInfo.start && windowInfo.end) {
+        const start = new Date(windowInfo.start);
+        const end = new Date(windowInfo.end);
+        const minutes = Math.round((end - start) / 60000);
+        range.textContent =
+          'start ' + formatUtc(start) +
+          '  \u00b7  range 0 \u2192 +' + minutes + ' min' +
+          '  \u00b7  orbital prediction, not live tracking';
+      }
     }
     if (!layer.keyframes) {
       showStatus('No position samples were supplied.', 'payload.keyframes missing');
       return;
     }
     applyGroupFilters(sceneChanged);
-    applySelection(payload.selection);
+    // A light rerun can arrive before Python has stored the click (payload.selection is
+    // still null). Treat null on an unchanged scene as "no news", not "deselect", so the
+    // highlight never flickers; a scene change always applies the payload verbatim.
+    if (payload.selection != null || sceneChanged) {
+      applySelection(payload.selection);
+    }
     drawSelectedTrack(payload.selected_track);
     redraw();
     hideStatus();
@@ -702,7 +720,9 @@ import * as THREE from './vendor/three.module.min.js';
       };
     },
     get simTime() { return currentTime(); },
-    select: (index) => selectIndex(index, false),
+    // Behaves like a real marker click: notifies Python so the payload comes back with
+    // the selected satellite's trail.
+    select: (index) => selectIndex(index, true),
     setPlaying: setPlaying,
     setTime: (t) => { state.tNorm = t; redraw(); },
     toggleGroup: (id, on) => {

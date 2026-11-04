@@ -374,10 +374,35 @@ body::before {
 }
 
 #window-note {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+}
+
+/* start time / range / "not live tracking" line under the playback controls */
+.playback-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
   margin-top: 6px;
   font-family: var(--mono);
   font-size: 9.5px;
   letter-spacing: 0.02em;
+  color: #7f93a9;
+}
+
+#window-range { color: #9fb6cd; }
+#window-range::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+  opacity: 0.85;
 }
 
 /* hover tooltip */
