@@ -112,6 +112,66 @@ def _axis_title(name: str) -> str:
     return f"{spec.label} ({spec.unit})" if spec.unit else spec.label
 
 
+def group_count_bar(counts: pd.DataFrame, *, labels: Mapping[str, str],
+                    colours: Mapping[str, str]) -> go.Figure:
+    """A zero-baseline count chart; one primary group per unique satellite."""
+    if counts.empty:
+        return _empty("Select a satellite group to compare.")
+    fig = go.Figure(go.Bar(
+        x=counts["n"], y=[labels.get(g, g) for g in counts["group"]],
+        orientation="h", marker_color=[colours.get(g, _ACCENT) for g in counts["group"]],
+        text=[f"{n:,}  ·  {share:.1f}%" for n, share in
+              zip(counts["n"], counts["share_pct"])], textposition="outside",
+        cliponaxis=False, customdata=counts[["group", "share_pct"]].to_numpy(),
+        hovertemplate="<b>%{y}</b><br>%{x:,} satellites<br>%{customdata[1]:.1f}% of selection<extra></extra>",
+    ))
+    _theme(fig, height=max(230, len(counts) * 48 + 65),
+           x_title="Number of satellites", showlegend=False)
+    fig.update_layout(margin=dict(l=10, r=100, t=10, b=10), bargap=0.48)
+    fig.update_xaxes(rangemode="tozero", tickformat=",d")
+    fig.update_yaxes(autorange="reversed", showgrid=False, tickfont=dict(size=13, color=INK))
+    return fig
+
+
+def altitude_ranges(summary: pd.DataFrame, *, labels: Mapping[str, str],
+                    colours: Mapping[str, str], unit: str = "km") -> go.Figure:
+    """Full ranges and middle halves on a linear axis, using precomputed quartiles.
+
+No logarithmic compression or pooled median hides distinct altitude populations.
+The UI offers altitude bands and discloses that these ranges describe the chosen band.
+"""
+    from src.analysis.overview import KM_PER_MILE
+
+    if summary.empty:
+        return _empty("No altitude estimates in this range.", height=260)
+    factor = 1 if unit == "km" else 1 / KM_PER_MILE
+    fig = go.Figure()
+    for row in summary.itertuples():
+        label = labels.get(str(row.group), str(row.group))
+        colour = colours.get(str(row.group), _ACCENT)
+        lo, q1, median, q3, hi = [getattr(row, k) * factor
+                                 for k in ("min", "q1", "median", "q3", "max")]
+        fig.add_trace(go.Scatter(x=[lo, hi], y=[label, label], mode="lines",
+                                 line=dict(color=colour, width=2), hoverinfo="skip"))
+        fig.add_trace(go.Scatter(x=[q1, q3], y=[label, label], mode="lines",
+                                 line=dict(color=colour, width=12), hoverinfo="skip"))
+        fig.add_trace(go.Scatter(
+            x=[median], y=[label], mode="markers", name=label,
+            marker=dict(color=colour, size=13, line=dict(color=INK, width=2)),
+            customdata=[[int(row.n), lo, q1, q3, hi, int(row.missing)]],
+            hovertemplate=(f"<b>{label}</b><br>Typical altitude: %{{x:,.0f}} {unit}"
+                           f"<br>Middle half: %{{customdata[2]:,.0f}}–%{{customdata[3]:,.0f}} {unit}"
+                           f"<br>Full range: %{{customdata[1]:,.0f}}–%{{customdata[4]:,.0f}} {unit}"
+                           "<br>%{customdata[0]:,} altitude estimates<extra></extra>"),
+        ))
+    _theme(fig, height=max(260, len(summary) * 55 + 80),
+           x_title=f"Height above Earth ({unit})", showlegend=False)
+    fig.update_layout(margin=dict(l=10, r=25, t=15, b=10))
+    fig.update_xaxes(type="linear", rangemode="tozero", tickformat=",.0f")
+    fig.update_yaxes(showgrid=False, tickfont=dict(size=13, color=INK))
+    return fig
+
+
 def align_order(frame: pd.DataFrame, by: str) -> list[str]:
     """Group order used consistently by every chart: largest group first."""
     return [str(name) for name in frame[by].astype(str).value_counts().index]

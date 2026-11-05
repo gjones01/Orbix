@@ -1,23 +1,18 @@
-"""The Analysis tab: descriptive statistics over the same snapshot the globe is showing.
+"""Satellite exploration with progressively disclosed academic diagnostics.
 
-Layout is deliberately a short report - overview, regimes, distributions, freshness,
-outliers, correlations - in the order the assignment ranks them, and every section states
-what it does *not* claim. Charts come from :mod:`src.analysis.figures`; nothing here
-computes statistics itself, and nothing here fetches data.
-
-Provenance is repeated in the UI, not just the code: axis titles carry units, the overview
-names how many columns are elements / derived / propagated, and the propagated columns are
-labelled as describing one instant.
+All views share one group filter and the globe snapshot; no data is fetched here.
 """
 
 from __future__ import annotations
 
+from html import escape
 from typing import Iterable
 
 import pandas as pd
 import streamlit as st
 
 from src.analysis import figures, stats
+from src.analysis.overview import BANDS, KM_PER_MILE, altitude_subset, discoveries, group_altitudes, overview
 from src.analysis.frame import GEO_BAND_KM, LEO_APOGEE_KM, catalog_frame, column_docs
 from src.api.catalog import GROUP_SPECS
 from src.ui.presentation import ConstellationScene
@@ -52,39 +47,18 @@ def _note(text: str) -> None:
     st.markdown(f'<div class="ox-card-foot">{text}</div>', unsafe_allow_html=True)
 
 
-def _stat_bar(frame: pd.DataFrame, scene: ConstellationScene) -> None:
-    """The overview strip: what is being analysed, and how it is measured."""
-    anchor = frame.attrs.get("anchor")
-    counts = column_docs()["provenance"].value_counts()
-    ages = frame["element_age_hours"].dropna()
-    items = [
-        ("Objects", f"{len(frame):,}"),
-        ("Constellations", f"{frame['constellation'].nunique()}"),
-        ("Anchor (UTC)", anchor.strftime("%Y-%m-%d %H:%M") if anchor else "-"),
-        ("Median element age", f"{ages.median():.1f} h" if not ages.empty else "-"),
-        ("Oldest element", f"{ages.max():.1f} h" if not ages.empty else "-"),
-        ("Columns", f"{counts.sum()} "
-                    f"({counts.get('element', 0)} element / {counts.get('derived', 0)} "
-                    f"derived / {counts.get('propagated', 0)} propagated)"),
-    ]
-    cells = "".join(
-        f'<div class="ox-row"><span class="ox-k">{key}</span>'
-        f'<span class="ox-v">{value}</span></div>'
-        for key, value in items
-    )
-    st.markdown(f'<div class="ox-card"><div class="ox-rows">{cells}</div></div>',
-                unsafe_allow_html=True)
-
-
 def _table(data: pd.DataFrame, *, height: int = 260, columns: Iterable[str] | None = None,
            precision: int = 3) -> None:
     """Render a DataFrame with sane column selection and rounding."""
     if data is None or data.empty:
         st.caption("Nothing to show.")
         return
-    shown = data[list(columns)] if columns else data
+    shown = (data[list(columns)] if columns else data).round(precision).copy()
+    # Frame attrs include the datetime anchor, already displayed explicitly above.
+    # Arrow table metadata must be JSON-serializable.
+    shown.attrs = {}
     st.dataframe(
-        shown.round(precision), width="stretch", height=height, hide_index=True,
+        shown, width="stretch", height=height, hide_index=True,
     )
 
 
@@ -112,43 +86,36 @@ def _section_regimes(
         "constellation. Select points on the chart (box or lasso in the modebar) to "
         "highlight the same satellites on the globe."
     )
-    names = list(frame["constellation"].astype(str).value_counts().index)
-    controls = st.columns([2, 1, 1])
-    with controls[0]:
-        chosen = st.multiselect(
-            "Constellations", names, default=names, key="analysis_regime_groups"
-        )
-    with controls[1]:
-        log_y = st.toggle("Log altitude axis", value=True, key="analysis_regime_log")
-    with controls[2]:
-        st.metric("Highlighted", len(highlight))
-
-    subset = frame.loc[frame["constellation"].astype(str).isin(chosen)] if chosen \
-        else frame.iloc[0:0]
+    log_y = st.toggle("Compress altitude scale (logarithmic)", value=False,
+                      key="analysis_regime_log",
+                      help="Equal distances then represent equal ratios, not equal kilometres.")
+    subset = frame
     figure = figures.regime_scatter(
-        subset, colours=colours, highlight_ids=highlight, log_y=log_y
+        # Keep trace indices stable across selection reruns. Plotly displays its own
+        # selection; moving highlighted rows into another trace would reinterpret
+        # the retained event against different satellites on the next run.
+        subset, colours=colours, log_y=log_y
     )
     state = st.plotly_chart(
-        figure, key="analysis_regime_chart", on_select="rerun",
+        figure, key=f"analysis_regime_chart_{st.session_state.get('analysis_selection_revision', 0)}", on_select="rerun",
         selection_mode=("points", "box", "lasso"),
     )
     selected = figures.selection_norad_ids(figure, state)
-    if selected:
+    # Process only a new selection event. A retained Plotly selection must not
+    # resurrect highlights after a group/satellite button or an explicit clear.
+    previous = st.session_state.get("analysis_last_chart_selection", [])
+    if selected != previous:
+        st.session_state["analysis_last_chart_selection"] = selected
         _sync_highlight(selected)
-    elif highlight and not selected:
-        _caption(
-            "Highlight cleared. Chart selection drives the globe highlight; the globe's own "
-            "click selection is independent."
-        )
 
     _table(
-        stats.regime_counts(subset if not subset.empty else frame),
+        stats.regime_counts(subset),
         height=180, precision=0,
     )
     _note(
         "Regime boundaries are a convention, not physics: LEO means the mean orbit stays "
         f"below {LEO_APOGEE_KM - 6378.137:.0f} km altitude, GEO means the geosynchronous "
-        f"band {GEO_BAND_KM[0]:.0f}-{GEO_BAND_KM[1]:.0f} km, and e >= 0.25 is HEO. "
+        f"band {GEO_BAND_KM[0]:.0f}-{GEO_BAND_KM[1]:.0f} km from Earth's centre, and e >= 0.25 is HEO. "
         "Regime comes from the mean elements; the y value is where the object was at the "
         "anchor, so an eccentric orbit can sit outside its own regime - which is exactly "
         "why both are shown."
@@ -214,8 +181,8 @@ def _section_freshness(frame: pd.DataFrame) -> None:
         )
     _note(
         f"Element age is measured against the scene anchor, not against the clock, so this "
-        f"page stays reproducible. Above {stats.STALE_ELEMENT_HOURS:.0f} h SGP4 drift is "
-        "kilometres or worse. Missing values are reported, never imputed: a zero-filled B* "
+        f"page stays reproducible. {stats.STALE_ELEMENT_HOURS:.0f} h is the app's age-warning "
+        "threshold; actual position accuracy depends on the orbit and element quality. Missing values are reported, never imputed: a zero-filled B* "
         "would claim the object has no drag."
     )
 
@@ -340,34 +307,217 @@ def _section_correlations(frame: pd.DataFrame) -> None:
     )
 
 
+def _set_highlight(ids: list[int]) -> None:
+    """Reset the chart's retained event when a dashboard button takes ownership."""
+    st.session_state["analysis_selection_revision"] = (
+        st.session_state.get("analysis_selection_revision", 0) + 1
+    )
+    st.session_state["analysis_last_chart_selection"] = []
+    _sync_highlight(ids)
+
+
+def _cards(summary: dict, labels: dict[str, str], unit: str) -> None:
+    factor = 1 if unit == "km" else 1 / KM_PER_MILE
+    typical = summary["median_altitude_km"] * factor
+    cards = [
+        ("Satellites analyzed", f"{summary['total']:,}",
+         f"Across {len(summary['counts'])} selected groups"),
+        ("Most common group", labels.get(summary["largest"], summary["largest"] or "—"),
+         f"{summary['largest_share']:.1f}% of selected satellites"),
+        ("Typical altitude", f"{typical:,.0f} {unit}" if pd.notna(typical) else "Unavailable",
+         f"Median of {summary['valid_altitudes']:,} altitude estimates"),
+        ("Unusual altitudes", f"{len(summary['flagged']):,}",
+         f"Among {summary['assessed']:,} assessed · worth exploring"),
+    ]
+    cells = "".join(
+        f'<div class="ox-analysis-metric"><div class="ox-analysis-label">{escape(label)}</div>'
+        f'<div class="ox-analysis-value">{escape(value)}</div>'
+        f'<div class="ox-analysis-detail">{escape(detail)}</div></div>'
+        for label, value, detail in cards
+    )
+    st.markdown(f'<div class="ox-analysis-metrics">{cells}</div>', unsafe_allow_html=True)
+
+
+def _freshness_summary(frame: pd.DataFrame) -> None:
+    ages = frame["element_age_hours"].dropna()
+    if ages.empty:
+        st.caption("Orbit-data age is unavailable. See the data quality audit below.")
+        return
+    age = float(ages.median())
+    if age < 0:
+        text = f"Typical orbit-data epoch is {abs(age):.0f} hours after the snapshot time."
+    else:
+        duration = f"{age:.0f} hours" if age < 48 else f"{age / 24:.1f} days"
+        text = f"Orbit data is typically {duration} old at the snapshot time."
+    stale = int((ages > stats.STALE_ELEMENT_HOURS).sum())
+    if stale:
+        text += f" {stale:,} element sets exceed the 3.5-day age warning."
+    missing = int(frame["altitude_km"].isna().sum())
+    if missing:
+        text += f" {missing:,} satellites have no altitude estimate."
+    st.caption(text + " Data quality and limitations are explained below.")
+
+
+def _explore(frame: pd.DataFrame, summary: dict, labels: dict[str, str],
+             colours: dict[str, str], unit: str) -> None:
+    st.subheader("Explore satellite groups")
+    largest = labels.get(summary["largest"], summary["largest"])
+    st.markdown(f"**{largest} accounts for {summary['largest_share']:.1f}%** of this selection. "
+                "Larger groups have more influence on the overall typical altitude.")
+    st.plotly_chart(figures.group_count_bar(summary["counts"], labels=labels, colours=colours),
+                    key="analysis_group_counts", config={"displayModeBar": False})
+    left, right = st.columns([2, 1], vertical_alignment="bottom")
+    with left:
+        group = st.selectbox("Group to highlight on the globe", summary["counts"]["group"].tolist(),
+                             format_func=lambda g: labels.get(g, g), key="analysis_highlight_group")
+    with right:
+        if st.button("Highlight group", key="analysis_highlight_group_button", width="stretch"):
+            ids = frame.loc[(frame["constellation"].astype(str) == group)
+                            & frame["altitude_km"].notna(), "norad_id"].tolist()
+            _set_highlight(ids)
+    st.caption("Open the Globe tab to see highlighted satellites. Objects without a position "
+               "estimate cannot be highlighted. Each satellite is counted in its primary group.")
+
+    st.subheader("How high do satellites orbit?")
+    st.markdown("Compare heights above Earth. Narrow the range to see nearby orbits more clearly.")
+    band = st.radio("Altitude range", BANDS, horizontal=True, key="analysis_altitude_band")
+    subset = altitude_subset(frame, band)
+    st.caption(f"Showing {len(subset):,} of {summary['valid_altitudes']:,} available altitude "
+               "estimates. This range control affects only the chart below; boundaries are in kilometres.")
+    st.plotly_chart(figures.altitude_ranges(group_altitudes(subset), labels=labels,
+                                           colours=colours, unit=unit),
+                    key="analysis_altitude_ranges", config={"displayModeBar": False})
+    st.caption("Dot = typical height (median). Thick line = the middle half of satellites. "
+               "Thin line = lowest to highest. All heights are estimates at the snapshot time; "
+               "a line shows a range, not a continuous population. Hover over a dot for counts.")
+
+
+def _discoveries(frame: pd.DataFrame, summary: dict, labels: dict[str, str], unit: str) -> None:
+    st.subheader("Interesting discoveries")
+    items = discoveries(frame, summary, labels, unit)
+    for title, body in items:
+        st.markdown(f'<div class="ox-analysis-discovery"><strong>{escape(title)}</strong>'
+                    f'<p>{escape(body)}</p></div>', unsafe_allow_html=True)
+    st.caption("Computed from your selected groups. Unusual-altitude counts use the default "
+               "IQR and modified z-score rules within each group and orbital regime. "
+               "Strata with fewer than four estimates are unassessed; no rows are removed.")
+    with st.expander("Explore individual satellites"):
+        only_flagged = st.toggle("Only unusual altitudes", key="analysis_only_flagged")
+        candidates = frame.loc[frame["altitude_km"].notna()]
+        if only_flagged:
+            ids = summary["flagged"]["norad_id"] if not summary["flagged"].empty else []
+            candidates = candidates.loc[candidates["norad_id"].isin(ids)]
+        if candidates.empty:
+            st.info("No satellites with an altitude estimate match this view.")
+        else:
+            names = candidates.set_index("norad_id")["name"].to_dict()
+            selected = st.selectbox("Satellite", candidates["norad_id"].tolist(),
+                                    format_func=lambda n: f"{names[n]} · NORAD {n}",
+                                    key="analysis_satellite")
+            row = candidates.loc[candidates["norad_id"] == selected].iloc[0]
+            factor = 1 if unit == "km" else 1 / KM_PER_MILE
+            st.write(f"Estimated height: **{row['altitude_km'] * factor:,.0f} {unit}** · "
+                     f"Orbit tilt: **{row['inclination_deg']:.1f}°**")
+            st.caption("Orbit tilt is the angle of the orbital plane relative to Earth’s equator.")
+            if st.button("Highlight satellite on globe"):
+                _set_highlight([int(selected)])
+
+
 def render_analysis(scene: ConstellationScene) -> list[int]:
-    """Render the Analysis tab and return the NORAD ids highlighted from its charts."""
+    """Render an approachable overview and retain every academic diagnostic."""
+    labels = {spec.id: spec.label for spec in GROUP_SPECS}
     colours = _colours()
+    frame = catalog_frame(scene)
+    st.markdown('<div class="ox-analysis-eyebrow">SATELLITE EXPLORER</div>', unsafe_allow_html=True)
+    st.title("A closer look at orbit")
+    st.markdown("Explore the satellites in your loaded snapshot: which groups dominate, "
+                "how high they orbit, and what stands out.")
+    st.caption(f"Position estimates for {frame.attrs['anchor']:%d %b %Y · %H:%M} UTC. "
+               "Computed from CelesTrak orbital elements using SGP4; globe playback moves "
+               "forward from this time, while this analysis stays at the starting snapshot.")
+    available = [spec.id for spec in GROUP_SPECS
+                 if spec.id in set(frame["constellation"].astype(str))]
+    # Reconcile persisted filters when the sidebar changes the loaded catalogue.
+    old_available = st.session_state.get("analysis_available_groups")
+    if "analysis_groups" not in st.session_state:
+        saved = st.session_state.get("analysis_saved_groups", available)
+        st.session_state["analysis_groups"] = [g for g in saved if g in available]
+    if old_available != available:
+        previous = st.session_state.get("analysis_groups", available)
+        st.session_state["analysis_groups"] = (available if previous == old_available
+                                               else [g for g in available if g in previous])
+        st.session_state["analysis_available_groups"] = available
+    left, right = st.columns([3, 1])
+    def save_groups() -> None:
+        # A globe selection can rerun before this tab renders. Keep the filter in
+        # non-widget state so Streamlit's widget cleanup cannot discard it.
+        st.session_state["analysis_saved_groups"] = st.session_state["analysis_groups"]
+    with left:
+        groups = st.multiselect("Groups to compare", available, format_func=lambda g: labels[g],
+                                key="analysis_groups", on_change=save_groups,
+                                help="Applies to the summary, discoveries "
+                                "and all advanced diagnostics. Load more groups in the sidebar.")
+    st.session_state["analysis_saved_groups"] = list(groups)
+    with right:
+        unit = st.radio("Height units", ("km", "mi"), horizontal=True, key="analysis_units")
+    subset = frame.loc[frame["constellation"].astype(str).isin(groups)].copy()
+    scope = tuple(groups)
+    if st.session_state.get("analysis_scope") != scope:
+        st.session_state["analysis_scope"] = scope
+        st.session_state["analysis_selection_revision"] = (
+            st.session_state.get("analysis_selection_revision", 0) + 1
+        )
+        st.session_state["analysis_last_chart_selection"] = []
     highlight = sorted(st.session_state.get(_HIGHLIGHT_KEY) or [])
+    valid_ids = set(subset.loc[subset["altitude_km"].notna(), "norad_id"])
+    retained = [n for n in highlight if n in valid_ids]
+    if highlight != retained:
+        _set_highlight(retained)
+    if subset.empty:
+        st.info("Choose at least one group above to explore its satellites. "
+                "If no groups are available, check the data-loading report on the Globe tab.")
+        return []
+    summary = overview(subset)
+    _cards(summary, labels, unit)
+    _freshness_summary(subset)
+    if highlight:
+        st.caption(f"{len(highlight):,} satellites highlighted on the Globe tab.")
+        if st.button("Clear globe highlights"):
+            _set_highlight([])
+    _explore(subset, summary, labels, colours, unit)
+    _discoveries(subset, summary, labels, unit)
 
-    with st.spinner("Building the analysis frame from the loaded snapshot..."):
-        frame = catalog_frame(scene)
-
-    st.markdown("### Analysis")
-    st.markdown(
-        "Descriptive statistics over exactly the snapshot the globe is showing: same "
-        "objects, same elements, same anchor instant. Nothing here refetches data, and "
-        "nothing here is a temporal series - it is one snapshot describing one moment."
-    )
-    _stat_bar(frame, scene)
-    _caption(
-        f"anchor {frame.attrs['anchor']:%Y-%m-%d %H:%M} UTC / "
-        f"{frame.attrs['window_minutes']:.0f} min playback window / "
-        f"propagated columns describe that instant only"
-    )
-
-    _section_regimes(frame, colours, highlight)
-    _section_distributions(frame, colours)
-    _section_freshness(frame)
-    _section_outliers(frame)
-    _section_correlations(frame)
-
-    with st.expander("Column provenance (what is observed, derived, or modelled)"):
+    st.subheader("Data quality & methodology")
+    st.caption("Inspect the evidence behind these views. All diagnostics use your selected "
+               "groups. Technical tables and charts retain their documented scientific units.")
+    with st.expander("Data freshness, missing values & source details"):
+        st.write(f"Catalogue retrieved: {scene.catalog.retrieved_at:%Y-%m-%d %H:%M} UTC. "
+                 "Retrieval time records the download; element epochs record when the orbit "
+                 "was fitted. Neither is a live position measurement.")
+        for status in scene.catalog.groups:
+            st.write(f"{status.spec.label}: {status.label}" +
+                     (f" — {status.error}" if status.error else ""))
+        _section_freshness(subset)
+    with st.expander("Descriptive statistics & distributions"):
+        _section_distributions(subset, colours)
+        st.markdown("**All descriptive statistics**")
+        _table(stats.describe(subset), height=400)
+    with st.expander("Outlier diagnostics & thresholds"):
+        st.caption("The overview uses altitude, group + regime, k = 1.5 and modified z = 3.5. "
+                   "The controls below are an independent investigation and do not change its count.")
+        _section_outliers(subset)
+        st.markdown("**Evidence for the overview’s unusual-altitude count**")
+        _table(summary["outlier_summary"])
+        _table(summary["flagged"])
+    with st.expander("Correlation analysis"):
+        _section_correlations(subset)
+    with st.expander("Advanced orbit map & linked selection"):
+        _section_regimes(subset, colours, highlight)
+    with st.expander("Satellite data & column methodology"):
+        st.caption("Altitudes are propagated WGS-84 heights above Earth. Semi-major axis, "
+                   "perigee and apogee radii describe mean elements and are measured from "
+                   "Earth’s centre. Altitude display bands are not orbital-regime classifications. "
+                   "Missing observations remain missing, and flags never remove satellites.")
+        _table(subset, height=420)
         st.dataframe(column_docs(), width="stretch", hide_index=True, height=420)
-
     return sorted(st.session_state.get(_HIGHLIGHT_KEY) or [])

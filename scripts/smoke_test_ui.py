@@ -27,6 +27,7 @@ import json
 import subprocess
 import sys
 import time
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--keep-server", action="store_true")
     parser.add_argument("--headful", action="store_true")
+    parser.add_argument("--offline", action="store_true", help="Use saved snapshots without API requests")
     parser.add_argument(
         "--starlink",
         action="store_true",
@@ -199,7 +201,7 @@ def _analysis_tab_checks(driver, report: dict, failures: list[str],
     """Open the Analysis tab and assert that its sections and charts really render."""
     from selenium.webdriver.common.by import By
 
-    tabs = driver.find_elements(By.CSS_SELECTOR, "[data-testid='stTabs'] button")
+    tabs = driver.find_elements(By.CSS_SELECTOR, "[data-testid='stTabs'] button[role='tab']")
     labels = [tab.text.strip() for tab in tabs]
     report["tabs"] = labels
     target = next((tab for tab in tabs if tab.text.strip().lower() == "analysis"), None)
@@ -211,11 +213,11 @@ def _analysis_tab_checks(driver, report: dict, failures: list[str],
 
     body = driver.find_element(By.TAG_NAME, "body").text
     sections = {
-        "regimes": "Orbital regimes",
-        "distributions": "Distributions",
-        "freshness": "Freshness and missing data",
-        "outliers": "Outlier diagnostics",
-        "correlations": "Correlations: pooled vs within constellation",
+        "overview": "A closer look at orbit",
+        "groups": "Explore satellite groups",
+        "altitudes": "How high do satellites orbit?",
+        "discoveries": "Interesting discoveries",
+        "methodology": "Data quality & methodology",
     }
     found = {key: header in body for key, header in sections.items()}
     report["analysisSections"] = found
@@ -225,12 +227,90 @@ def _analysis_tab_checks(driver, report: dict, failures: list[str],
 
     charts = driver.find_elements(By.CSS_SELECTOR, ".js-plotly-plot")
     report["analysisCharts"] = len(charts)
-    if len(charts) < 5:
-        failures.append(f"expected at least 5 Plotly charts, found {len(charts)}")
+    if len(charts) < 2:
+        failures.append(f"expected at least 2 Plotly charts, found {len(charts)}")
 
     # Tables are Streamlit dataframes; at least the regime crosstab must be present.
     if not driver.find_elements(By.CSS_SELECTOR, "[data-testid='stDataFrame']"):
         failures.append("no data tables rendered in the Analysis tab")
+
+    # Exercise a real dashboard action through Python and back into the WebGL renderer.
+    from selenium.webdriver.support.ui import WebDriverWait
+    wait = WebDriverWait(driver, 30)
+    try:
+        highlight_button = wait.until(lambda d: d.find_element(By.XPATH, "//button[normalize-space(.)='Highlight group']"))
+    except Exception:
+        print(driver.find_element(By.TAG_NAME, "body").text)
+        raise
+    driver.execute_script("arguments[0].click();", highlight_button)
+    def highlighted(d):
+        d.switch_to.default_content()
+        frame = next(f for f in d.find_elements(By.TAG_NAME, "iframe")
+                     if "orbix_globe" in (f.get_attribute("src") or ""))
+        d.switch_to.frame(frame)
+        count = d.execute_script("return window.__orbix ? window.__orbix.highlightCount : 0;")
+        d.switch_to.default_content()
+        return count
+    count = wait.until(highlighted)
+    report["analysisGroupHighlight"] = count
+    clear = wait.until(lambda d: d.find_element(By.XPATH, "//button[normalize-space(.)='Clear globe highlights']"))
+    driver.execute_script("arguments[0].click();", clear)
+    wait.until(lambda d: highlighted(d) == 0)
+    wait.until(lambda d: not d.find_elements(By.XPATH, "//button[normalize-space(.)='Clear globe highlights']"))
+
+    # Disclosed diagnostics must be reachable, including the original scatter selection.
+    expected = {
+        "Data freshness, missing values & source details": "Freshness and missing data",
+        "Descriptive statistics & distributions": "All descriptive statistics",
+        "Outlier diagnostics & thresholds": "Outlier diagnostics",
+        "Correlation analysis": "Correlations: pooled vs within constellation",
+        "Advanced orbit map & linked selection": "Orbital regimes",
+        "Satellite data & column methodology": "semi_major_axis_km",
+    }
+    report["analysisDiagnostics"] = {}
+    for label, content in expected.items():
+        element = driver.find_element(By.XPATH, f"//summary[contains(., '{label}')]")
+        driver.execute_script("arguments[0].click();", element)
+        # Streamlit tables use canvas; their presence is checked separately above.
+        if label == "Satellite data & column methodology":
+            ok = bool(driver.find_elements(By.CSS_SELECTOR, "details[open] [data-testid='stDataFrame']"))
+        else:
+            try:
+                wait.until(lambda d: content in d.find_element(By.TAG_NAME, "body").text)
+                ok = True
+            except Exception:
+                ok = False
+        report["analysisDiagnostics"][label] = ok
+        if not ok:
+            failures.append(f"cannot access diagnostic: {label}")
+        if label == "Advanced orbit map & linked selection":
+            # Send the same Plotly event produced by box/lasso selection through
+            # Streamlit's real event handler, then inspect the globe result.
+            selected_id = driver.execute_script("""
+                const plot = [...document.querySelectorAll('.js-plotly-plot')].find(
+                    p => p.layout && p.layout.xaxis &&
+                         (p.layout.xaxis.title.text || '').startsWith('Inclination'));
+                const t = plot.data[0];
+                plot.emit('plotly_selected', {points: [{curveNumber: 0, pointNumber: 0,
+                    pointIndex: 0, data: t, x: t.x[0], y: t.y[0], customdata: t.customdata[0]}]});
+                return Number(t.customdata[0][0]);
+            """)
+            wait.until(lambda d: highlighted(d) == 1)
+            time.sleep(.5)
+            report["analysisScatterSelection"] = {"norad_id": selected_id, "highlighted": highlighted(driver)}
+            clear = driver.find_element(By.XPATH, "//button[normalize-space(.)='Clear globe highlights']")
+            driver.execute_script("arguments[0].click();", clear)
+            wait.until(lambda d: highlighted(d) == 0)
+            wait.until(lambda d: not d.find_elements(By.XPATH, "//button[normalize-space(.)='Clear globe highlights']"))
+            element = driver.find_element(By.XPATH, f"//summary[contains(., '{label}')]")
+        driver.execute_script("arguments[0].click();", element)
+
+    exceptions = driver.find_elements(By.CSS_SELECTOR, "[data-testid='stException']")
+    if exceptions:
+        failures.append("Streamlit exception in Analysis: " + exceptions[0].text)
+    severe = [e for e in driver.get_log("browser") if e["level"] == "SEVERE"]
+    if severe:
+        failures.append(f"{len(severe)} severe console errors during Analysis interactions")
 
     if screenshot:
         Path(screenshot).parent.mkdir(parents=True, exist_ok=True)
@@ -249,7 +329,15 @@ def _analysis_tab_checks(driver, report: dict, failures: list[str],
             Path(screenshot).stem + "-lower" + Path(screenshot).suffix
         )
         driver.save_screenshot(str(lower))
-        driver.execute_script("window.scrollTo(0, 0);")
+        for width, height in [(1600, 1000), (1366, 900)]:
+            driver.set_window_size(width, height)
+            driver.execute_script("document.querySelector('[data-testid=stMain]').scrollTop = 0;")
+            time.sleep(.6)
+            driver.save_screenshot(str(Path(screenshot).with_name(f"analysis-{width}.png")))
+            overflow = driver.execute_script(
+                "const el=document.querySelector('[data-testid=stMain]'); return el.scrollWidth > el.clientWidth+2;")
+            if overflow:
+                failures.append(f"Analysis overflows horizontally at {width}px")
         driver.set_window_size(1600, 1000)
 
 
@@ -413,8 +501,19 @@ def _interaction_checks(driver, initial: dict, report: dict, failures: list[str]
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     url = f"http://localhost:{args.port}"
+    temporary = tempfile.TemporaryDirectory(prefix="orbix-smoke-")
+    entry = REPO_ROOT / "app.py"
+    if args.offline:
+        entry = Path(temporary.name) / "offline_app.py"
+        entry.write_text(
+            f"import sys\nsys.path.insert(0, {str(REPO_ROOT)!r})\n"
+            "import app\nfrom src.ui.loading import load_constellation_cached\n"
+            "app.load_constellation_cached = lambda groups, window, offline, refresh, when: "
+            "load_constellation_cached(groups, window, True, False, when)\napp.main()\n",
+            encoding="utf-8",
+        )
     server = subprocess.Popen(
-        [sys.executable, "-m", "streamlit", "run", str(REPO_ROOT / "app.py"),
+        [sys.executable, "-m", "streamlit", "run", str(entry),
          "--server.port", str(args.port), "--server.headless", "true"],
         cwd=str(REPO_ROOT), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
@@ -440,6 +539,9 @@ def main(argv: list[str] | None = None) -> int:
             "tabs": report.get("tabs"),
             "analysisSections": report.get("analysisSections"),
             "analysisCharts": report.get("analysisCharts"),
+            "analysisGroupHighlight": report.get("analysisGroupHighlight"),
+            "analysisDiagnostics": report.get("analysisDiagnostics"),
+            "analysisScatterSelection": report.get("analysisScatterSelection"),
             "perf": report.get("perf"),
             "severeErrors": report.get("severeErrors"),
         }
@@ -457,6 +559,7 @@ def main(argv: list[str] | None = None) -> int:
                 server.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 server.kill()
+            temporary.cleanup()
 
 
 if __name__ == "__main__":

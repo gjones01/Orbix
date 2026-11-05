@@ -239,6 +239,39 @@ _CSS = """
     padding-top: 6px;
   }
 
+  /* Analysis-specific cards: responsive without changing the Globe tab. */
+  .ox-analysis-eyebrow {
+    color: #8dcaff; font-size: .72rem; letter-spacing: .16em;
+    margin-top: 1.2rem; font-weight: 600;
+  }
+  .ox-analysis-metrics {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px; margin: 10px 0 6px;
+  }
+  .ox-analysis-metric {
+    background: #0b111b; border: 1px solid #243244;
+    border-radius: 12px; padding: 20px; min-width: 0;
+  }
+  .ox-analysis-label { color: #a9b8c9; font-size: .81rem; }
+  .ox-analysis-value {
+    font-size: clamp(1.35rem, 2vw, 2.1rem); font-weight: 650;
+    color: #f2f7ff; letter-spacing: -.03em; margin: 9px 0;
+    font-variant-numeric: tabular-nums; line-height: 1.25;
+  }
+  .ox-analysis-detail { color: #a9b8c9; font-size: .75rem; line-height: 1.55; }
+  .ox-analysis-discovery {
+    border-left: 3px solid #58b6ff; background: #0b111b;
+    border-radius: 0 9px 9px 0; padding: 17px 22px; margin-bottom: 6px;
+  }
+  .ox-analysis-discovery strong { color: #e8f1fb; font-size: .96rem; }
+  .ox-analysis-discovery p { color: #b4c2d3; margin: 7px 0 0; line-height: 1.65; font-size: .9rem; }
+  @media (max-width: 1200px) {
+    .ox-analysis-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 600px) {
+    .ox-analysis-metrics { grid-template-columns: 1fr; }
+  }
+
   /* Tighter, more instrument-like buttons in the sidebar. */
   [data-testid="stSidebar"] .stButton button {
     width: 100%;

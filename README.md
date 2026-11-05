@@ -458,7 +458,7 @@ real captured CelesTrak payloads, and the clock is controllable so cache-expiry
 behaviour is deterministic. Propagation tests run entirely offline against
 Skyfield's built-in time tables.
 
-Expected result: **130 passed**.
+Expected result: **162 passed**.
 
 The globe itself cannot be verified from Python, so `scripts/smoke_test_ui.py`
 drives it in a real headless browser and asserts that markers, label, rings and
@@ -477,21 +477,44 @@ and the globe always describe the same snapshot, elements and anchor instant.
 | `frame.py` | `catalog_frame(scene)` -> one row per object; `classify_regime()` (LEO/MEO/GEO/HEO); `validate_frame()` enforces the registry |
 | `stats.py` | `describe`, `missing_report`, `freshness`, `composition`, `regime_counts`, `add_stratum`, `outliers`, `correlation_matrix`, `per_group_correlations`, `pooled_vs_within` |
 | `figures.py` | Plotly builders for the five sections, plus `selection_norad_ids()` (chart click -> NORAD ids) |
+| `overview.py` | Dashboard summaries, altitude display bands and computed discoveries; reuses existing statistics |
 | `src/ui/analysis_tab.py` | The tab itself: controls, charts, tables and the methodological captions |
 
-![Analysis tab](docs/screenshots/analysis-tab.png)
+![Analysis tab](docs/screenshots/analysis-redesign.png)
 
-The tab has five sections, in the assignment's priority order: orbital regimes (altitude vs
-inclination, with regime as marker shape), distributions (box or violin, groupable by
-constellation or by constellation *and* regime), freshness and missing-data audit, outlier
-diagnostics (IQR fence and modified z-score, with a configurable heterogeneity heuristic and
-optional regime segmentation) and pooled-vs-within correlations with the per-group evidence.
+The Analysis tab opens with four summary cards: satellites analyzed, most common group,
+typical altitude, and unusual-altitude count. A single **Groups to compare** selection
+drives the entire report. Group counts use readable names and the globe's colours;
+an altitude comparison shows each group's median, middle half and full range on a linear
+axis. Switch between kilometres and miles, or narrow the altitude chart to below 2,000 km,
+2,000–30,000 km, or 30,000 km and above. These display bands describe propagated height at
+the snapshot time, not the element-derived orbital regimes.
 
-Selecting points on the regime chart (box or lasso in the Plotly modebar) highlights the
-same satellites on the Globe tab through `payload.highlight_ids`; the screenshot below shows
-the lower half of the page, including the flagged-observation table and the correlation audit.
+Computed discoveries identify the farthest selected satellite, the widest group altitude
+range, and statistically unusual altitudes. Overview flags reuse the existing IQR (1.5)
+and modified z-score (3.5) rules **within constellation and orbital regime**. Strata with
+fewer than four valid estimates are unassessed. Flags never imply danger or remove rows.
 
-![Analysis tab, lower sections](docs/screenshots/analysis-tab-lower.png)
+**Data quality & methodology** expands to reveal all original analyses: distributions and
+descriptive statistics, freshness and missing-data audit, configurable outlier diagnostics,
+pooled-vs-within correlations, the selectable orbit map, full data and column provenance.
+Advanced outlier controls are exploratory and do not change the overview's fixed count.
+Technical diagnostics retain their documented scientific units.
+
+Highlight a group or individual satellite and open the Globe tab to see the matching
+objects. Box/lasso selection remains available in the advanced orbit map. Clear highlights
+explicitly; changing groups removes highlights outside the selection. Satellites without
+propagated positions remain in the data audit but cannot be highlighted on the globe.
+Analysis describes the starting snapshot even while the globe's playback advances.
+
+No LLM service exists yet in this repository: discoveries are deterministic summaries of
+computed statistics. The assignment's LLM integration remains Phase 3 work.
+
+Run `python scripts/smoke_test_ui.py --offline --analysis-screenshot docs/screenshots/analysis-redesign.png`
+to verify the dashboard, disclosed diagnostics and group-to-globe highlight round trip
+against saved data, including 1600 px and 1366 px viewport captures.
+
+![Analysis tab, discoveries and methodology](docs/screenshots/analysis-redesign-lower.png)
 
 The distinction the registry enforces is not decorative: `semi_major_axis_km - 6378.137` is
 **681 km wrong** as an altitude for `FREGAT DEB` (e = 0.093) and right to 7.5 km for
