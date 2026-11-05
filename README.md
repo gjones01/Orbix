@@ -5,22 +5,7 @@
 Orbix is a Streamlit application that pulls *real* orbital data from CelesTrak,
 propagates it with SGP4, and renders an interactive three-dimensional Earth
 surrounded by satellites whose positions users can watch evolve over simulation
-time. The goal is a professional aerospace mission-control feel rather than a
-generic dashboard, without ever compromising scientific correctness.
-
-Orbix is a solo final project for the *Masters of Data Science — Programming for
-Data Science* capstone. The assignment mapping (what is required, what each phase
-delivers) lives in [`docs/assignment_requirements.md`](docs/assignment_requirements.md).
-
-> **Current status: Phase 1, Steps A–F complete.** Real CelesTrak data (B), SGP4
-> propagation in labelled frames (C), an interactive 3D Earth (D) and now a
-> **multi-constellation explorer** (E–F): five groups de-duplicated to ~11,958 unique
-> satellites, one batched WebGL layer, group filtering, click-to-select with orbit
-> trails, and browser-side simulation playback. **108 tests** pass and the globe is
-> verified in a headless browser (11,958 satellites at ~53 fps, software rendering).
-> See the [Roadmap](#roadmap).
->
-> ![Orbix constellation view](docs/screenshots/step-e-constellation.png)
+time. 
 
 ---
 
