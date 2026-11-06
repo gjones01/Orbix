@@ -258,6 +258,90 @@ def _analysis_tab_checks(driver, report: dict, failures: list[str],
     wait.until(lambda d: highlighted(d) == 0)
     wait.until(lambda d: not d.find_elements(By.XPATH, "//button[normalize-space(.)='Clear globe highlights']"))
 
+    # Analysis must use the globe's actual selection (panel + trail), not just
+    # the independent multi-object highlight channel. Exercise the retained old
+    # component event, then a new click on that same object at the same sim time.
+    def globe_action(script, *args):
+        driver.switch_to.default_content()
+        frame = next(f for f in driver.find_elements(By.TAG_NAME, "iframe")
+                     if "orbix_globe" in (f.get_attribute("src") or ""))
+        driver.switch_to.frame(frame)
+        result = driver.execute_script(script, *args)
+        driver.switch_to.default_content()
+        return result
+
+    baseline = globe_action("""
+        const o=window.__orbix; o.setTime(.2); o.setPlaying(false);
+        o.select(o.metadata.findIndex(m=>m.id===o.state.selectedId));
+        return {id:o.state.selectedId, scene:o.state.sceneId, camera:o.state.globe.pointOfView()};
+    """)
+    time.sleep(.7)
+    farthest = driver.find_element(By.XPATH, "//button[normalize-space(.)='Explore satellite on Globe']")
+    driver.execute_script("arguments[0].click();", farthest)
+    def analysis_selection(d):
+        import re
+        notices = d.find_elements(By.CSS_SELECTOR, "[data-testid='stAlert']")
+        for notice in notices:
+            found = re.search(r"NORAD (\d+)", notice.text)
+            if found and "is selected" in notice.text:
+                return int(found.group(1))
+        return False
+    target_id = wait.until(analysis_selection)
+    wait.until(lambda d: globe_action("return window.__orbix.state.selectedId;") == target_id)
+    selected = globe_action("""
+        const o=window.__orbix;
+        return {id:o.state.selectedId, scene:o.state.sceneId, time:o.state.tNorm,
+                camera:o.state.globe.pointOfView(), panel:document.getElementById('selected-name').textContent,
+                path:o.state.globe.pathsData()[0].points.length};
+    """)
+    if selected["scene"] != baseline["scene"] or abs(selected["time"] - .2) > .001:
+        failures.append("Analysis selection reset the globe scene or playback time")
+    if any(abs(selected["camera"][key] - baseline["camera"][key]) > .01 for key in ("lat", "lng", "altitude")):
+        failures.append("Analysis selection moved the camera unexpectedly")
+    if selected["path"] < 100 or not selected["panel"]:
+        failures.append("Analysis selection did not open the globe panel and full trail")
+    globe_action("window.__orbix.select(window.__orbix.metadata.findIndex(m=>m.id===arguments[0]));", baseline["id"])
+    # The Python panel (outside the iframe) must agree, proving the click crossed
+    # the bridge instead of just changing local JavaScript state.
+    old_name = globe_action("return window.__orbix.metadata.find(m=>m.id===arguments[0]).name;", baseline["id"])
+    wait.until(lambda d: any(old_name in e.get_attribute("textContent")
+                            for e in d.find_elements(By.CSS_SELECTOR, ".ox-card .name")))
+    globe_action("window.__orbix.setPlaying(true);")
+    time.sleep(.6)
+    after = globe_action("return {time:window.__orbix.state.tNorm, playing:window.__orbix.state.playing};")
+    globe_action("window.__orbix.setPlaying(false);")
+    if not after["playing"] or after["time"] <= .2:
+        failures.append("playback did not continue after Analysis selection")
+    report["analysisSharedSelection"] = {"selected_id": target_id, "panel": selected["panel"],
+        "trail_points": selected["path"], "returned_to_globe_id": baseline["id"],
+        "playback_continued": after["playing"] and after["time"] > .2}
+
+    investigate = driver.find_element(By.XPATH, "//button[normalize-space(.)='Investigate unusual satellites']")
+    driver.execute_script("arguments[0].click();", investigate)
+    wait.until(lambda d: d.find_element(By.CSS_SELECTOR, ".st-key-analysis_unusual_view button").is_displayed())
+    import re
+    choice_text = driver.find_element(By.CSS_SELECTOR, ".st-key-analysis_unusual_satellite").text
+    unusual_id = int(re.search(r"NORAD (\d+)", choice_text).group(1))
+    unusual = driver.find_element(By.CSS_SELECTOR, ".st-key-analysis_unusual_view button")
+    driver.execute_script("arguments[0].click();", unusual)
+    wait.until(lambda d: globe_action("return window.__orbix.state.selectedId;") == unusual_id)
+    report["analysisUnusualSelection"] = unusual_id
+    if screenshot:
+        for width, height in [(1600, 1000), (1366, 900)]:
+            driver.set_window_size(width, height)
+            explorer = driver.find_element(By.XPATH, "//summary[contains(., 'Explore unusual satellites')]")
+            driver.execute_script("arguments[0].scrollIntoView({block:'start'});", explorer)
+            time.sleep(.4)
+            driver.save_screenshot(str(Path(screenshot).with_name(f"analysis-unusual-{width}.png")))
+    # Leave the snapshot of the overview clean after verifying the explorer.
+    globe_action("window.__orbix.select(window.__orbix.metadata.findIndex(m=>m.id===arguments[0]));", baseline["id"])
+    wait.until(lambda d: any(old_name in e.get_attribute("textContent")
+                            for e in d.find_elements(By.CSS_SELECTOR, ".ox-card .name")))
+    clear = driver.find_element(By.XPATH, "//button[normalize-space(.)='Clear globe highlights']")
+    driver.execute_script("arguments[0].click();", clear)
+    wait.until(lambda d: highlighted(d) == 0)
+    wait.until(lambda d: not d.find_elements(By.XPATH, "//button[normalize-space(.)='Clear globe highlights']"))
+
     # Disclosed diagnostics must be reachable, including the original scatter selection.
     expected = {
         "Data freshness, missing values & source details": "Freshness and missing data",
@@ -542,6 +626,8 @@ def main(argv: list[str] | None = None) -> int:
             "analysisGroupHighlight": report.get("analysisGroupHighlight"),
             "analysisDiagnostics": report.get("analysisDiagnostics"),
             "analysisScatterSelection": report.get("analysisScatterSelection"),
+            "analysisSharedSelection": report.get("analysisSharedSelection"),
+            "analysisUnusualSelection": report.get("analysisUnusualSelection"),
             "perf": report.get("perf"),
             "severeErrors": report.get("severeErrors"),
         }

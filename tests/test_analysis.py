@@ -237,16 +237,17 @@ def test_outliers_is_honest_when_mad_is_zero():
 
 
 def test_robust_z_flags_a_value_the_iqr_fence_misses():
-    """Values 1..40 plus 60: the IQR fence stops at 59.5, so only the z-score can fire.
+    """Values 1..40 plus 60: the IQR fence stops at 61, so only the z-score fires.
 
-    q1 = 10.75, q3 = 30.25, IQR = 19.5, upper fence = 59.5 -> 60 is barely outside, and
-    must be caught by the modified z-score (median 20.5, MAD 10 -> z ~ 2.66) when the
+    With 41 values, q1 = 11, q3 = 31, IQR = 20, upper fence = 61 -> 60 is inside, and
+    is caught by the modified z-score (median 21, MAD 10 -> z ~ 2.63) when the
     threshold is lowered to 2.5. This proves the two criteria are independent.
     """
     frame = synthetic(altitude_km=[float(v) for v in range(1, 41)] + [60.0])
     summary, flagged = stats.outliers(frame, "altitude_km", mad_z=2.5)
 
     assert "modified z" in flagged.iloc[0]["reason"]
+    assert summary.iloc[0]["n_iqr"] == 0
     assert summary.iloc[0]["n_mad"] >= 1
 
 

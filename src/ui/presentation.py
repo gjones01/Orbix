@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Iterable
 
 from components.globe.payload import (
@@ -52,6 +53,21 @@ MAX_ELEMENT_AGE = timedelta(days=30)
 TRACK_SAMPLES = 121
 
 UTC = timezone.utc
+
+
+@lru_cache(maxsize=64)
+def _selected_track(element, start: datetime, samples: int):
+    """Reuse a selected orbit trail across analysis/filter reruns.
+
+The frozen element values, anchor and sample count form the cache key. A new
+element set or snapshot time computes a new trail; no scene arrays are retained.
+"""
+    period_seconds = (element.period_minutes or 92.95) * 60.0
+    step = period_seconds / max(1, samples - 1)
+    times = [start + timedelta(seconds=step * index) for index in range(samples)]
+    states = propagate_series(element, times)
+    return tuple((round(state.latitude_deg, 4), round(state.longitude_deg, 4),
+                  round(altitude_ratio(state.altitude_km), 5)) for state in states)
 
 
 def default_groups() -> tuple[str, ...]:
@@ -120,18 +136,7 @@ class ConstellationScene:
         start = when or self.plan.start
         if start.tzinfo is None:
             start = start.replace(tzinfo=UTC)
-        period_seconds = (element.period_minutes or 92.95) * 60.0
-        step = period_seconds / max(1, samples - 1)
-        times = [start + timedelta(seconds=step * index) for index in range(samples)]
-        states = propagate_series(element, times)
-        return tuple(
-            (
-                round(state.latitude_deg, 4),
-                round(state.longitude_deg, 4),
-                round(altitude_ratio(state.altitude_km), 5),
-            )
-            for state in states
-        )
+        return _selected_track(element, start, samples)
 
     def payload(
         self,

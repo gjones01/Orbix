@@ -458,7 +458,7 @@ real captured CelesTrak payloads, and the clock is controllable so cache-expiry
 behaviour is deterministic. Propagation tests run entirely offline against
 Skyfield's built-in time tables.
 
-Expected result: **162 passed**.
+Expected result: **168 passed**.
 
 The globe itself cannot be verified from Python, so `scripts/smoke_test_ui.py`
 drives it in a real headless browser and asserts that markers, label, rings and
@@ -480,15 +480,16 @@ and the globe always describe the same snapshot, elements and anchor instant.
 | `overview.py` | Dashboard summaries, altitude display bands and computed discoveries; reuses existing statistics |
 | `src/ui/analysis_tab.py` | The tab itself: controls, charts, tables and the methodological captions |
 
-![Analysis tab](docs/screenshots/analysis-redesign.png)
+![Analysis tab](docs/screenshots/analysis-1600.png)
 
 The Analysis tab opens with four summary cards: satellites analyzed, most common group,
 typical altitude, and unusual-altitude count. A single **Groups to compare** selection
 drives the entire report. Group counts use readable names and the globe's colours;
 an altitude comparison shows each group's median, middle half and full range on a linear
-axis. Switch between kilometres and miles, or narrow the altitude chart to below 2,000 km,
-2,000–30,000 km, or 30,000 km and above. These display bands describe propagated height at
-the snapshot time, not the element-derived orbital regimes.
+axis. Switch between kilometres and miles, or choose **Near Earth** (below 2,000 km,
+the default), **Higher Orbits** (2,000 km and above), or **All Satellites**. These display
+bands describe propagated height at the snapshot time, not the element-derived orbital
+regimes. The chart reports excluded/missing counts and leaves summary statistics unchanged.
 
 Computed discoveries identify the farthest selected satellite, the widest group altitude
 range, and statistically unusual altitudes. Overview flags reuse the existing IQR (1.5)
@@ -501,11 +502,27 @@ pooled-vs-within correlations, the selectable orbit map, full data and column pr
 Advanced outlier controls are exploratory and do not change the overview's fixed count.
 Technical diagnostics retain their documented scientific units.
 
-Highlight a group or individual satellite and open the Globe tab to see the matching
-objects. Box/lasso selection remains available in the advanced orbit map. Clear highlights
+Discovery cards link directly to satellite selection, group highlighting and an
+**Explore unusual satellites** section. Search by name or NORAD ID, filter by group,
+and browse 50-row pages showing altitude, comparison-group median, signed difference
+and flag reasons. **View on Globe** selects the stable NORAD ID in the same state the
+globe uses. Open the Globe tab to see the selected marker, information panel and orbit
+trail, with camera and playback preserved. Box/lasso selection remains available in
+the advanced orbit map. Clear highlights
 explicitly; changing groups removes highlights outside the selection. Satellites without
 propagated positions remain in the data audit but cannot be highlighted on the globe.
 Analysis describes the starting snapshot even while the globe's playback advances.
+
+The scene remains pinned while you explore, even after the shared cache expires.
+**Reload scene** or changing the sidebar data scope loads a new scene. Statistical
+results and selected orbit trails are cached, so ordinary Analysis controls reuse data.
+
+An independent audit reproduced the exact outlier IDs: 1,497 unique flags among 11,981
+assessed satellites at 2026-11-05 23:00 UTC, including 1,491 Starlink satellites. The high
+count reflects distinct altitude populations within Starlink's LEO group; the rules
+were mathematically correct and their thresholds were preserved. Counts vary by snapshot
+time. See the [Phase 2 report](docs/phase2_interactions.md) for the audit, limitations,
+changed-file list, verification and the command to reproduce it.
 
 No LLM service exists yet in this repository: discoveries are deterministic summaries of
 computed statistics. The assignment's LLM integration remains Phase 3 work.
@@ -514,7 +531,7 @@ Run `python scripts/smoke_test_ui.py --offline --analysis-screenshot docs/screen
 to verify the dashboard, disclosed diagnostics and group-to-globe highlight round trip
 against saved data, including 1600 px and 1366 px viewport captures.
 
-![Analysis tab, discoveries and methodology](docs/screenshots/analysis-redesign-lower.png)
+![Analysis tab, unusual satellite explorer](docs/screenshots/analysis-unusual-1600.png)
 
 The distinction the registry enforces is not decorative: `semi_major_axis_km - 6378.137` is
 **681 km wrong** as an altitude for `FREGAT DEB` (e = 0.093) and right to 7.5 km for

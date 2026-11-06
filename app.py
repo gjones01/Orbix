@@ -163,9 +163,16 @@ def main() -> None:
 
     try:
         with st.spinner("Loading catalogue and propagating the constellation..."):
-            scene = load_constellation_cached(
-                groups, window_minutes, offline, force_refresh, None
-            )
+            scope = (groups, window_minutes, offline, force_refresh)
+            saved = st.session_state.get("orbix_loaded_scene")
+            # Pin the user's snapshot across interactions, including after the shared
+            # five-minute cache expires. Reload scene or a data-scope change replaces it.
+            if saved is None or saved["scope"] != scope:
+                saved = {"scope": scope, "scene": load_constellation_cached(
+                    groups, window_minutes, offline, force_refresh, None
+                )}
+                st.session_state["orbix_loaded_scene"] = saved
+            scene = saved["scene"]
     except Exception as exc:  # noqa: BLE001 - surfaced to the user verbatim
         render_header(None)
         render_error(exc, offline)
@@ -204,16 +211,19 @@ def main() -> None:
         st.session_state["orbix_scene_signature"] = signature
 
         event = globe_component(payload, height=GLOBE_HEIGHT, key=COMPONENT_KEY)
-        if event and event.get("event") == "select":
+        if (event and event.get("event") == "select"
+                and event != st.session_state.get("orbix_last_event")):
             norad_id = int(event["norad_id"])
+            # Components retain their last event on unrelated reruns. Consume it once
+            # so an old globe click cannot override a newer Analysis selection.
+            st.session_state["orbix_last_event"] = dict(event)
             # The payload above carried the *previous* selection, so re-run once with the
             # new one: that is what brings back the selected satellite's trail. Guarded so
             # a repeated event cannot loop.
-            if st.session_state.get("orbix_selected") != norad_id:
+            if scene.element(norad_id) is not None and st.session_state.get("orbix_selected") != norad_id:
                 st.session_state["orbix_selected"] = norad_id
-                st.session_state["orbix_last_event"] = event
                 st.rerun()
-            selected = norad_id
+            selected = st.session_state["orbix_selected"]
 
         left, right = st.columns([1.15, 1], gap="medium")
         with left:

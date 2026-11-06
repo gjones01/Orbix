@@ -1,0 +1,350 @@
+{
+  "anchor_utc": "2026-11-05T23:00:00+00:00",
+  "catalogue_count": 11984,
+  "missing_altitude": 1,
+  "assessed": 11981,
+  "unique_flagged": 1497,
+  "independent_check": "exact NORAD-ID sets match",
+  "rules": "IQR k=1.5 OR abs(modified z)>3.5; per constellation/regime; n>=4",
+  "strata": [
+    {
+      "group": "gps-ops / MEO",
+      "n": 32,
+      "assessed": true,
+      "median_km": 20207.876953125,
+      "q1_km": 20125.63818359375,
+      "q3_km": 20291.1357421875,
+      "mad_km": 83.7998046875,
+      "lower_fence_km": 19877.391845703125,
+      "upper_fence_km": 20539.382080078125,
+      "iqr_only": 0,
+      "modified_z_only": 0,
+      "both": 2,
+      "either": 2,
+      "below_median": 2,
+      "above_median": 0
+    },
+    {
+      "group": "oneweb / LEO",
+      "n": 651,
+      "assessed": true,
+      "median_km": 1212.022216796875,
+      "q1_km": 1199.5137329101562,
+      "q3_km": 1224.5668334960938,
+      "mad_km": 12.59033203125,
+      "lower_fence_km": 1161.93408203125,
+      "upper_fence_km": 1262.146484375,
+      "iqr_only": 0,
+      "modified_z_only": 0,
+      "both": 3,
+      "either": 3,
+      "below_median": 3,
+      "above_median": 0
+    },
+    {
+      "group": "starlink / LEO",
+      "n": 11207,
+      "assessed": true,
+      "median_km": 476.4913635253906,
+      "q1_km": 465.3486785888672,
+      "q3_km": 485.2838439941406,
+      "mad_km": 9.758697509765625,
+      "lower_fence_km": 435.44593048095703,
+      "upper_fence_km": 515.1865921020508,
+      "iqr_only": 52,
+      "modified_z_only": 0,
+      "both": 1439,
+      "either": 1491,
+      "below_median": 1247,
+      "above_median": 244
+    },
+    {
+      "group": "stations / LEO",
+      "n": 18,
+      "assessed": true,
+      "median_km": 383.58673095703125,
+      "q1_km": 354.7328338623047,
+      "q3_km": 432.9150390625,
+      "mad_km": 49.32830810546875,
+      "lower_fence_km": 237.45952606201172,
+      "upper_fence_km": 550.188346862793,
+      "iqr_only": 0,
+      "modified_z_only": 0,
+      "both": 0,
+      "either": 0,
+      "below_median": 0,
+      "above_median": 0
+    },
+    {
+      "group": "stations / MEO",
+      "n": 1,
+      "assessed": false
+    },
+    {
+      "group": "weather / GEO",
+      "n": 22,
+      "assessed": true,
+      "median_km": 35787.02734375,
+      "q1_km": 35784.3388671875,
+      "q3_km": 35790.837890625,
+      "mad_km": 3.568359375,
+      "lower_fence_km": 35774.59033203125,
+      "upper_fence_km": 35800.58642578125,
+      "iqr_only": 0,
+      "modified_z_only": 0,
+      "both": 1,
+      "either": 1,
+      "below_median": 0,
+      "above_median": 1
+    },
+    {
+      "group": "weather / HEO",
+      "n": 1,
+      "assessed": false
+    },
+    {
+      "group": "weather / LEO",
+      "n": 51,
+      "assessed": true,
+      "median_km": 496.5640869140625,
+      "q1_km": 469.85968017578125,
+      "q3_km": 830.0431518554688,
+      "mad_km": 135.08978271484375,
+      "lower_fence_km": -70.41552734375,
+      "upper_fence_km": 1370.318359375,
+      "iqr_only": 0,
+      "modified_z_only": 0,
+      "both": 0,
+      "either": 0,
+      "below_median": 0,
+      "above_median": 0
+    }
+  ],
+  "starlink_altitude_bins_25km": [
+    {
+      "altitude_band_25km": 100.0,
+      "n": 1,
+      "flagged": 1
+    },
+    {
+      "altitude_band_25km": 175.0,
+      "n": 1,
+      "flagged": 1
+    },
+    {
+      "altitude_band_25km": 200.0,
+      "n": 3,
+      "flagged": 3
+    },
+    {
+      "altitude_band_25km": 225.0,
+      "n": 9,
+      "flagged": 9
+    },
+    {
+      "altitude_band_25km": 250.0,
+      "n": 11,
+      "flagged": 11
+    },
+    {
+      "altitude_band_25km": 275.0,
+      "n": 37,
+      "flagged": 37
+    },
+    {
+      "altitude_band_25km": 300.0,
+      "n": 46,
+      "flagged": 46
+    },
+    {
+      "altitude_band_25km": 325.0,
+      "n": 101,
+      "flagged": 101
+    },
+    {
+      "altitude_band_25km": 350.0,
+      "n": 713,
+      "flagged": 713
+    },
+    {
+      "altitude_band_25km": 375.0,
+      "n": 146,
+      "flagged": 146
+    },
+    {
+      "altitude_band_25km": 400.0,
+      "n": 131,
+      "flagged": 131
+    },
+    {
+      "altitude_band_25km": 425.0,
+      "n": 142,
+      "flagged": 48
+    },
+    {
+      "altitude_band_25km": 450.0,
+      "n": 3930,
+      "flagged": 0
+    },
+    {
+      "altitude_band_25km": 475.0,
+      "n": 5659,
+      "flagged": 0
+    },
+    {
+      "altitude_band_25km": 500.0,
+      "n": 42,
+      "flagged": 9
+    },
+    {
+      "altitude_band_25km": 525.0,
+      "n": 50,
+      "flagged": 50
+    },
+    {
+      "altitude_band_25km": 550.0,
+      "n": 87,
+      "flagged": 87
+    },
+    {
+      "altitude_band_25km": 575.0,
+      "n": 98,
+      "flagged": 98
+    }
+  ],
+  "examples": [
+    {
+      "norad_id": 55159,
+      "name": "ONEWEB-0618",
+      "group": "oneweb / LEO",
+      "regime": "LEO",
+      "value": 521.38037109375,
+      "group_median": 1212.022216796875,
+      "robust_z": -36.999653684312584,
+      "reason": "outside 1.5xIQR fence [1162, 1262]; modified z -37.0 exceeds 3.5",
+      "delta_km": -690.641845703125
+    },
+    {
+      "norad_id": 45453,
+      "name": "ONEWEB-0050",
+      "group": "oneweb / LEO",
+      "regime": "LEO",
+      "value": 595.6781616210938,
+      "group_median": 1212.022216796875,
+      "robust_z": -33.01930911624976,
+      "reason": "outside 1.5xIQR fence [1162, 1262]; modified z -33.0 exceeds 3.5",
+      "delta_km": -616.3440551757812
+    },
+    {
+      "norad_id": 48212,
+      "name": "ONEWEB-0179",
+      "group": "oneweb / LEO",
+      "regime": "LEO",
+      "value": 733.5741577148438,
+      "group_median": 1212.022216796875,
+      "robust_z": -25.631827266337016,
+      "reason": "outside 1.5xIQR fence [1162, 1262]; modified z -25.6 exceeds 3.5",
+      "delta_km": -478.44805908203125
+    },
+    {
+      "norad_id": 32260,
+      "name": "GPS BIIRM-4 (PRN 15)",
+      "group": "gps-ops / MEO",
+      "regime": "MEO",
+      "value": 19748.529296875,
+      "group_median": 20207.876953125,
+      "robust_z": -3.697263917213411,
+      "reason": "outside 1.5xIQR fence [1.988e+04, 2.054e+04]; modified z -3.7 exceeds 3.5",
+      "delta_km": -459.34765625
+    },
+    {
+      "norad_id": 38833,
+      "name": "GPS BIIF-3  (PRN 24)",
+      "group": "gps-ops / MEO",
+      "regime": "MEO",
+      "value": 19772.2578125,
+      "group_median": 20207.876953125,
+      "robust_z": -3.506274405379264,
+      "reason": "outside 1.5xIQR fence [1.988e+04, 2.054e+04]; modified z -3.5 exceeds 3.5",
+      "delta_km": -435.619140625
+    },
+    {
+      "norad_id": 48022,
+      "name": "STARLINK-2298",
+      "group": "starlink / LEO",
+      "regime": "LEO",
+      "value": 105.28764343261719,
+      "group_median": 476.4913635253906,
+      "robust_z": -25.6567957918586,
+      "reason": "outside 1.5xIQR fence [435.4, 515.2]; modified z -25.7 exceeds 3.5",
+      "delta_km": -371.20372009277344
+    },
+    {
+      "norad_id": 45695,
+      "name": "STARLINK-1420",
+      "group": "starlink / LEO",
+      "regime": "LEO",
+      "value": 184.7378692626953,
+      "group_median": 476.4913635253906,
+      "robust_z": -20.165368552848424,
+      "reason": "outside 1.5xIQR fence [435.4, 515.2]; modified z -20.2 exceeds 3.5",
+      "delta_km": -291.7534942626953
+    },
+    {
+      "norad_id": 68028,
+      "name": "STARLINK-36253",
+      "group": "starlink / LEO",
+      "regime": "LEO",
+      "value": 203.69125366210938,
+      "group_median": 476.4913635253906,
+      "robust_z": -18.85535174326788,
+      "reason": "outside 1.5xIQR fence [435.4, 515.2]; modified z -18.9 exceeds 3.5",
+      "delta_km": -272.80010986328125
+    },
+    {
+      "norad_id": 45532,
+      "name": "STARLINK-1338",
+      "group": "starlink / LEO",
+      "regime": "LEO",
+      "value": 206.08094787597656,
+      "group_median": 476.4913635253906,
+      "robust_z": -18.690181263740214,
+      "reason": "outside 1.5xIQR fence [435.4, 515.2]; modified z -18.7 exceeds 3.5",
+      "delta_km": -270.41041564941406
+    },
+    {
+      "norad_id": 46563,
+      "name": "STARLINK-1730",
+      "group": "starlink / LEO",
+      "regime": "LEO",
+      "value": 209.3123321533203,
+      "group_median": 476.4913635253906,
+      "robust_z": -18.466834993104484,
+      "reason": "outside 1.5xIQR fence [435.4, 515.2]; modified z -18.5 exceeds 3.5",
+      "delta_km": -267.1790313720703
+    },
+    {
+      "norad_id": 53740,
+      "name": "STARLINK-4607",
+      "group": "starlink / LEO",
+      "regime": "LEO",
+      "value": 225.5169677734375,
+      "group_median": 476.4913635253906,
+      "robust_z": -17.34680573563121,
+      "reason": "outside 1.5xIQR fence [435.4, 515.2]; modified z -17.3 exceeds 3.5",
+      "delta_km": -250.97439575195312
+    },
+    {
+      "norad_id": 55487,
+      "name": "STARLINK-5701",
+      "group": "starlink / LEO",
+      "regime": "LEO",
+      "value": 226.14788818359375,
+      "group_median": 476.4913635253906,
+      "robust_z": -17.30319788568766,
+      "reason": "outside 1.5xIQR fence [435.4, 515.2]; modified z -17.3 exceeds 3.5",
+      "delta_km": -250.34347534179688
+    }
+  ],
+  "source_elements_sha256": "53a038b9c0602854bf3c1565dcf03afa98a4bc41c794f7691f05891aba649038"
+}

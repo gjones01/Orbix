@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-05T22:29:24Z",
+  "generated_at": "2026-11-06T01:15:09Z",
   "snapshots": [
     {
       "cache_key": "catnr-25544",
@@ -313,6 +313,58 @@
       "record_count": 11208,
       "newest_epoch": "2026-11-05T19:58:47.044416Z",
       "sha256": "9460b6d88d6f9cbf4b5d7568ab28a9a80267373c8f2a6dc77524ced17f5d76b1"
+    },
+    {
+      "cache_key": "group-stations",
+      "query": {
+        "GROUP": "STATIONS"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=STATIONS&FORMAT=JSON",
+      "filename": "group-stations_20261106T011508Z.json",
+      "retrieved_at": "2026-11-06T01:15:08Z",
+      "http_status": 200,
+      "record_count": 19,
+      "newest_epoch": "2026-11-04T21:46:39.576864Z",
+      "sha256": "dfcd675789961ccff98ee0f1c34a7dc3b6d39b37a89e0c62e09345f52fcb9b85"
+    },
+    {
+      "cache_key": "group-gps-ops",
+      "query": {
+        "GROUP": "GPS-OPS"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=GPS-OPS&FORMAT=JSON",
+      "filename": "group-gps-ops_20261106T011508Z.json",
+      "retrieved_at": "2026-11-06T01:15:08Z",
+      "http_status": 200,
+      "record_count": 32,
+      "newest_epoch": "2026-11-04T21:59:22.506144Z",
+      "sha256": "e82bdd27e171298d9cd7d53dcda11de27804220c16df8cf172e3a6fadf7a1232"
+    },
+    {
+      "cache_key": "group-weather",
+      "query": {
+        "GROUP": "WEATHER"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=WEATHER&FORMAT=JSON",
+      "filename": "group-weather_20261106T011508Z.json",
+      "retrieved_at": "2026-11-06T01:15:08Z",
+      "http_status": 200,
+      "record_count": 74,
+      "newest_epoch": "2026-11-04T23:51:30.464640Z",
+      "sha256": "873791cb58ac9fd9f9681bfdb6467a8912519bea96c277d3f5a984558e5baf16"
+    },
+    {
+      "cache_key": "group-oneweb",
+      "query": {
+        "GROUP": "ONEWEB"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=ONEWEB&FORMAT=JSON",
+      "filename": "group-oneweb_20261106T011509Z.json",
+      "retrieved_at": "2026-11-06T01:15:09Z",
+      "http_status": 200,
+      "record_count": 651,
+      "newest_epoch": "2026-11-05T00:00:02.999808Z",
+      "sha256": "db03ee1c4def9717135425a58df2a398d426319e217b325104704aa16894bfbe"
     }
   ]
 }

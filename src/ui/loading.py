@@ -43,3 +43,5 @@ def load_constellation_cached(
 def clear_scene_cache() -> None:
     """Drop cached scenes so the next rerun recomputes from source."""
     load_constellation_cached.clear()
+    st.session_state.pop("orbix_loaded_scene", None)
+    st.session_state.pop("orbix_analysis_frame", None)

@@ -447,8 +447,15 @@ import * as THREE from './vendor/three.module.min.js';
       }
     }
     state.selection = index;
-    if (layer) layer.setSelection(index, HIGHLIGHT);
-    redraw();
+    if (index >= 0) {
+      // Reuse the same marker and information panel path for Python selections.
+      selectIndex(index, false);
+    } else {
+      if (layer) layer.setSelection(index, HIGHLIGHT);
+      document.getElementById('selected-name').textContent = 'click a satellite';
+      document.getElementById('selected-meta').textContent = '';
+      redraw();
+    }
   }
 
   /**
@@ -642,12 +649,14 @@ import * as THREE from './vendor/three.module.min.js';
     document.getElementById('selected-meta').textContent =
       'NORAD ' + meta.id + ' \u00b7 ' + meta.alt.toFixed(1) + ' km \u00b7 ' +
       meta.incl.toFixed(2) + '\u00b0 \u00b7 ' + meta.period.toFixed(2) + ' min';
-    if (notifyPython && state.lastSentSelection !== meta.id) {
+    if (notifyPython) {
       state.lastSentSelection = meta.id;
+      state.selectionEvent = (state.selectionEvent || 0) + 1;
       const simTime = currentTime() || new Date();
       Bridge.setValue({
         event: 'select',
         norad_id: meta.id,
+        event_id: state.selectionEvent,
         name: meta.name,
         sim_time: simTime.toISOString(),
       });
