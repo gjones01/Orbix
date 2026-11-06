@@ -61,6 +61,12 @@ def test_discovery_and_unusual_satellites_share_globe_selection(app):
     frame = app.session_state["orbix_analysis_frame"]["frame"]
     assert selected == int(frame.loc[frame["altitude_km"].idxmax(), "norad_id"])
     assert app.session_state["orbix_highlight_ids"] == [selected]
+    action = app.session_state["analysis_globe_action"]
+    assert action["kind"] == "select" and action["ids"] == [selected]
+    app.radio(key="analysis_units").set_value("mi").run()
+    assert app.session_state["analysis_globe_action"] == action
+    app.button(key="analysis_farthest_view").click().run()
+    assert app.session_state["analysis_globe_action"]["revision"] > action["revision"]
     app.button(key="analysis_investigate_button").click().run()
     assert not app.exception
     candidates = app.selectbox(key="analysis_unusual_satellite").options

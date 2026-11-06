@@ -90,6 +90,7 @@ import * as THREE from './vendor/three.module.min.js';
     hoverIndex: -1,
     lastSentSelection: null,
     highlightCount: 0,
+    lastAnalysisAction: null,
   };
 
   let layer = null;
@@ -353,6 +354,7 @@ import * as THREE from './vendor/three.module.min.js';
       if (state.tNorm >= 1) state.tNorm = 0;    // loop the bounded window
       redraw();
     }
+    updateSelectionMarker(); // Also follows camera drags while playback is paused.
     // fps counter
     state.frameStats.frames += 1;
     if (!state.frameStats.startedAt) state.frameStats.startedAt = now;
@@ -475,6 +477,65 @@ import * as THREE from './vendor/three.module.min.js';
     redraw();
   }
 
+  function updateSelectionMarker() {
+    const marker = document.getElementById('selection-marker');
+    const i = state.selection;
+    marker.hidden = true;
+    if (!layer || i == null || i < 0 || !layer.visible[i]) return;
+    const point = new THREE.Vector3().fromArray(layer.positions, i * 3);
+    if (![point.x, point.y, point.z].every(Number.isFinite)) return;
+    const camera = state.globe.camera();
+    const projected = point.clone().project(camera);
+    if (Math.abs(projected.x) > .98 || Math.abs(projected.y) > .95 ||
+        projected.z < -1 || projected.z > 1) return;
+    // Do not draw a label through Earth when the user rotates to the far side.
+    const ray = point.clone().sub(camera.position);
+    const distance = ray.length();
+    ray.normalize();
+    const t = Math.min(distance, Math.max(0, -camera.position.dot(ray)));
+    if (camera.position.clone().addScaledVector(ray, t).length() < state.radius) return;
+    const canvas = state.globe.renderer().domElement;
+    marker.style.left = ((projected.x + 1) * canvas.clientWidth / 2) + 'px';
+    marker.style.top = ((1 - projected.y) * canvas.clientHeight / 2) + 'px';
+    marker.querySelector('span').textContent = state.metadata[i].name + ' · ' + state.selectedId;
+    marker.hidden = false;
+  }
+
+  function applyAnalysisAction(action) {
+    if (!action || action.revision === state.lastAnalysisAction) return;
+    state.lastAnalysisAction = action.revision;
+    const wanted = new Set((action.ids || []).map(Number));
+    const indices = [];
+    state.metadata.forEach((meta, i) => {
+      if (!wanted.has(meta.id)) return;
+      const group = state.groupSpecs[meta.g];
+      if (group) state.enabledGroups.add(group.id);
+      indices.push(i);
+    });
+    // An explicit action reveals its group even if it was hidden locally.
+    // It does not alter loaded data, simulation time or playback state.
+    applyGroupFilters(false);
+    const points = indices.map(i => new THREE.Vector3().fromArray(layer.positions, i * 3))
+      .filter(p => [p.x, p.y, p.z].every(Number.isFinite) && p.length() > 0);
+    if (!points.length) return;
+    const globe = state.globe, radius = state.radius;
+    let view, distance;
+    if (action.kind === 'select') {
+      const p = points[0], r = p.length();
+      distance = Math.max(3.5 * radius, r + 2 * radius);
+      view = {lat: Math.asin(p.y / r) / DEG, lng: Math.atan2(p.x, p.z) / DEG};
+    } else {
+      // Fit the highlighted orbital heights without inventing a common location.
+      const r = Math.max(...points.map(p => p.length()));
+      const halfFov = Math.atan(Math.tan(globe.camera().fov * DEG / 2) * Math.min(1, globe.camera().aspect));
+      distance = Math.max(globe.camera().position.length(), r / Math.sin(halfFov) * 1.12);
+      view = globe.pointOfView();
+    }
+    globe.controls().maxDistance = Math.max(globe.controls().maxDistance, distance * 1.1);
+    globe.pointOfView({...view, altitude: distance / radius - 1}, 0);
+    updateSelectionMarker();
+  }
+
   function drawSelectedTrack(track) {
     if (!state.globe) return;
     if (!track || track.length < 2) {
@@ -540,6 +601,7 @@ import * as THREE from './vendor/three.module.min.js';
       applyHighlights(payload.highlight_ids);
     }
     drawSelectedTrack(payload.selected_track);
+    applyAnalysisAction(payload.analysis_action);
     redraw();
     hideStatus();
   }

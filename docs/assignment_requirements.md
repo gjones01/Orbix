@@ -6,7 +6,16 @@ Data Science Course*
 (3 pages, Google Docs export, read in full with `pypdf` 6.19.0 on 2026-11-04)
 **Project:** Orbix — interactive 3D satellite visualization and orbital intelligence
 **Team:** solo final project (one student)
-**Document status:** Phase 1 baseline. Updated at the end of each phase.
+**Document status:** Original Phase 1 baseline retained below for history.
+
+**Phase 3 update:** The globe and Phase 2 EDA are implemented. Ask Orbix now integrates
+an OpenAI-compatible API into Analysis for data-grounded questions and pattern
+explanations. `src/analyst/` supplies computed statistical context, bounded requests,
+provider error handling and conversation state; `src/ui/analyst.py` renders it.
+This implements the meaningful LLM/API requirement. Automated verification uses mocks;
+a successful live provider response remains to be demonstrated after configuration.
+See [Phase 3 implementation and verification](ai_analyst.md). The report, class demo,
+hosted submission and commit approval remain separate deliverables.
 
 ---
 

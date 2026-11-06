@@ -443,7 +443,7 @@ real captured CelesTrak payloads, and the clock is controllable so cache-expiry
 behaviour is deterministic. Propagation tests run entirely offline against
 Skyfield's built-in time tables.
 
-Expected result: **168 passed**.
+The suite includes offline orbital, dashboard and AI tests; external model calls are mocked.
 
 The globe itself cannot be verified from Python, so `scripts/smoke_test_ui.py`
 drives it in a real headless browser and asserts that markers, label, rings and
@@ -492,7 +492,10 @@ Discovery cards link directly to satellite selection, group highlighting and an
 and browse 50-row pages showing altitude, comparison-group median, signed difference
 and flag reasons. **View on Globe** selects the stable NORAD ID in the same state the
 globe uses. Open the Globe tab to see the selected marker, information panel and orbit
-trail, with camera and playback preserved. Box/lasso selection remains available in
+trail. Explicit Analysis actions centre the selected satellite once and reveal its group
+if hidden; a labelled ring makes the marker identifiable. Group highlight actions fit
+the highlighted orbital heights. Playback continues, and ordinary reruns preserve subsequent
+camera adjustments. Box/lasso selection remains available in
 the advanced orbit map. Clear highlights
 explicitly; changing groups removes highlights outside the selection. Satellites without
 propagated positions remain in the data audit but cannot be highlighted on the globe.
@@ -509,8 +512,20 @@ were mathematically correct and their thresholds were preserved. Counts vary by 
 time. See the [Phase 2 report](docs/phase2_interactions.md) for the audit, limitations,
 changed-file list, verification and the command to reproduce it.
 
-No LLM service exists yet in this repository: discoveries are deterministic summaries of
-computed statistics. The assignment's LLM integration remains Phase 3 work.
+### Ask Orbix (Phase 3)
+
+The Analysis tab now includes **Ask Orbix**: questions, suggested investigations and
+**Find interesting patterns**, grounded in the loaded snapshot and selected groups.
+Python calculates the statistics; a configured OpenAI-compatible model explains them.
+Answers show their snapshot, scope, caveats and expandable computed evidence.
+
+Set `ORBIX_LLM_BASE_URL`, `ORBIX_LLM_MODEL` and `ORBIX_LLM_API_KEY` in the server
+environment or `.streamlit/secrets.toml`. No provider is selected automatically, and
+no API key is needed for the existing globe or EDA. Requests happen only on submission;
+there are no automatic retries or paid-provider fallbacks. No new dependencies are needed.
+See [AI analyst setup, privacy and limitations](docs/ai_analyst.md) for placeholder
+configuration, context construction, cost controls and verification. Live LLM verification
+is outstanding because no provider credentials were configured.
 
 Run `python scripts/smoke_test_ui.py --offline --analysis-screenshot docs/screenshots/analysis-redesign.png`
 to verify the dashboard, disclosed diagnostics and group-to-globe highlight round trip
@@ -538,7 +553,7 @@ large "outlier" share is reported as *heterogeneity* rather than as contaminated
 | E | Time slider/playback, richer selection, focus controls, freshness badge | next |
 | F | GPS-OPS and a bounded Starlink subset, rendering performance | pending |
 | Phase 2 | EDA: statistics, correlations, missing data, outliers, in-app insights | **done** - Analysis tab with regime scatter, distributions, freshness/missing audit, outlier diagnostics and pooled-vs-within correlations |
-| Phase 3 | LLM-grounded orbital analysis and natural-language explanations | deferred |
+| Phase 3 | Ask Orbix: data-grounded questions and pattern explanations | implemented; live provider verification pending configuration |
 
 ---
 

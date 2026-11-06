@@ -139,7 +139,9 @@ def build_constellation_payload(
             f"{len(satellites)} satellites vs {sample.lat.shape[0]} samples"
         )
 
-    group_index = {spec.id: index for index, spec in enumerate(group_specs)}
+    # `g` indexes the groups actually shipped below, not the global registry.
+    # Otherwise a GPS-only scene (global index 1, payload index 0) is invisible.
+    group_index = {status.spec.id: index for index, status in enumerate(catalog.groups)}
     metadata = []
     for sat in satellites:
         element = sat.element

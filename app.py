@@ -207,6 +207,9 @@ def main() -> None:
             highlight_ids=highlight_ids,
             include_keyframes=include_keyframes,
         )
+        # Explicit Analysis actions may reveal/focus their targets once. Keeping
+        # this token stable prevents ordinary widget reruns from moving the camera.
+        payload["analysis_action"] = st.session_state.get("analysis_globe_action")
         payload_bytes = len(str(payload))
         st.session_state["orbix_scene_signature"] = signature
 

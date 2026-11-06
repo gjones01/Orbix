@@ -17,6 +17,7 @@ from src.analysis.frame import GEO_BAND_KM, LEO_APOGEE_KM, column_docs
 from src.api.catalog import GROUP_SPECS
 from src.ui import analysis_cache as cached
 from src.ui.presentation import ConstellationScene
+from src.ui.analyst import render_analyst
 
 __all__ = ["render_analysis"]
 
@@ -308,13 +309,24 @@ def _section_correlations(frame: pd.DataFrame) -> None:
     )
 
 
-def _set_highlight(ids: list[int]) -> None:
+def _set_highlight(ids: list[int], *, reveal: bool = False) -> None:
     """Reset the chart's retained event when a dashboard button takes ownership."""
     st.session_state["analysis_selection_revision"] = (
         st.session_state.get("analysis_selection_revision", 0) + 1
     )
     st.session_state["analysis_last_chart_selection"] = []
+    if reveal and ids:
+        _globe_action("highlight", ids)
     _sync_highlight(ids)
+    if reveal and ids:
+        st.rerun()  # Repeated explicit actions still need to reach the component.
+
+
+def _globe_action(kind: str, ids: list[int]) -> None:
+    """One-shot viewing intent; selection identity still uses orbix_selected."""
+    revision = st.session_state.get("analysis_globe_action_revision", 0) + 1
+    st.session_state["analysis_globe_action_revision"] = revision
+    st.session_state["analysis_globe_action"] = {"revision": revision, "kind": kind, "ids": ids}
 
 
 def _select_satellite(frame: pd.DataFrame, norad_id: int) -> None:
@@ -329,8 +341,9 @@ def _select_satellite(frame: pd.DataFrame, norad_id: int) -> None:
     st.session_state["analysis_notice_id"] = int(norad_id)
     st.session_state["analysis_globe_notice"] = (
         f"{row['name']} (NORAD {norad_id}) is selected. Open the Globe tab at the top "
-        "to see its marker, information panel and orbit trail."
+        "to see its labelled marker, information panel and orbit trail. The view is centred on this satellite."
     )
+    _globe_action("select", [int(norad_id)])
     # Keep the existing many-object highlight channel; single-object selection
     # also needs orbix_selected, which the globe itself already uses.
     st.session_state[_HIGHLIGHT_KEY] = [int(norad_id)]
@@ -397,7 +410,7 @@ def _explore(frame: pd.DataFrame, summary: dict, labels: dict[str, str],
         if st.button("Highlight group", key="analysis_highlight_group_button", width="stretch"):
             ids = frame.loc[(frame["constellation"].astype(str) == group)
                             & frame["altitude_km"].notna(), "norad_id"].tolist()
-            _set_highlight(ids)
+            _set_highlight(ids, reveal=True)
     st.caption("Open the Globe tab to see highlighted satellites. Objects without a position "
                "estimate cannot be highlighted. Each satellite is counted in its primary group.")
 
@@ -498,7 +511,7 @@ def _discoveries(frame: pd.DataFrame, summary: dict, labels: dict[str, str], uni
                          key="analysis_discovery_group"):
                 ids = frame.loc[(frame["constellation"].astype(str) == item.group_id)
                                 & frame["altitude_km"].notna(), "norad_id"].tolist()
-                _set_highlight(ids)
+                _set_highlight(ids, reveal=True)
         else:
             if st.button("Investigate unusual satellites", key="analysis_investigate_button"):
                 st.session_state["analysis_investigate"] = True
@@ -582,6 +595,7 @@ def render_analysis(scene: ConstellationScene) -> list[int]:
     if subset.empty:
         st.info("Choose at least one group above to explore its satellites. "
                 "If no groups are available, check the data-loading report on the Globe tab.")
+        render_analyst(frame, groups)
         return []
     summary = cached.overview(subset)
     _cards(summary, labels, unit)
@@ -596,6 +610,8 @@ def render_analysis(scene: ConstellationScene) -> list[int]:
             _set_highlight([])
     _explore(subset, summary, labels, colours, unit)
     _discoveries(subset, summary, labels, unit)
+
+    render_analyst(frame, groups)
 
     st.subheader("Data quality & methodology")
     st.caption("Inspect the evidence behind these views. All diagnostics use your selected "

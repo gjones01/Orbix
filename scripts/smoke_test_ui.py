@@ -296,8 +296,10 @@ def _analysis_tab_checks(driver, report: dict, failures: list[str],
     """)
     if selected["scene"] != baseline["scene"] or abs(selected["time"] - .2) > .001:
         failures.append("Analysis selection reset the globe scene or playback time")
-    if any(abs(selected["camera"][key] - baseline["camera"][key]) > .01 for key in ("lat", "lng", "altitude")):
-        failures.append("Analysis selection moved the camera unexpectedly")
+    # Explicit Analysis selections now focus their target once; keeping the old
+    # camera could leave a GEO satellite completely outside the visible viewport.
+    if not globe_action("return !document.getElementById('selection-marker').hidden;"):
+        failures.append("Analysis selection did not reveal the labelled marker")
     if selected["path"] < 100 or not selected["panel"]:
         failures.append("Analysis selection did not open the globe panel and full trail")
     globe_action("window.__orbix.select(window.__orbix.metadata.findIndex(m=>m.id===arguments[0]));", baseline["id"])

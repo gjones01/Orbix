@@ -2,6 +2,26 @@
 
 ## Interactions
 
+**2026-11-06 visibility correction:** the original regression proved selection state and
+panel updates but did not prove the satellite was visible after switching tabs. With the
+current five-group snapshot, FENGYUN 4A (41882) projected outside the right edge of the
+1600-pixel browser's globe viewport (normalized x ≈ 1.02). The new explicit Analysis
+viewing request centres that satellite once, zooms out enough for its real altitude,
+restores its group if locally hidden, and adds a labelled ring at its projected position.
+Subsequent widget reruns do not reapply focus. Playback time and running state remain
+unchanged. Group-level actions reveal their groups and fit their orbital heights.
+
+`scripts/verify_analysis_selection.py` uses native button clicks and real tab switches,
+including a fresh session with no prior globe click, repeat selections, hidden groups,
+unusual satellites, individual satellites, ordinary reruns after camera adjustment and
+selection during playback. It asserts the target lies inside the camera's visible area
+and its label is visible, alongside the NORAD ID, information panel and orbit trail.
+The existing smoke script also passes on all 11,982 currently saved satellites.
+
+A related payload fix makes group indices refer to the groups actually loaded: a
+GPS-only catalogue previously used a global index outside its one-element group list.
+This has a dedicated regression test. Current test suite: **169 tests**.
+
 Discovery cards now have one relevant action: select the farthest satellite, highlight
 the group with the widest altitude range, or open the unusual-satellite explorer.
 The explorer supports literal name/NORAD search, group filtering and 50-row pages.
@@ -13,8 +33,8 @@ Individual **View on Globe** actions update the existing `orbix_selected` state 
 `orbix_highlight_ids`; the normal globe payload then supplies the marker, information
 panel and 121-point orbit trail. The user opens the existing Globe tab. Streamlit 1.50's
 tabs have no supported programmatic selection API, so there is no DOM-click workaround.
-The camera remains where the user left it. Globe-local visibility filters remain local;
-if a group has been hidden there, the user can turn it back on with the globe controls.
+Explicit Analysis actions now centre their target once (see the visibility correction
+above). Normal globe clicks preserve the camera; local group filters otherwise remain local.
 
 The bridge consumes each globe event once. Previously a retained component event could
 undo an Analysis selection on the next rerun. New globe clicks carry an event counter,

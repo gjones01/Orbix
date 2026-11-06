@@ -484,4 +484,14 @@ def test_scene_can_look_up_elements_and_groups(scene):
     assert scene.selected_track(1) == ()
 
 
+def test_payload_group_indices_match_partial_loaded_catalogue():
+    """A GPS-only scene must not index a missing global group slot in the renderer."""
+    from src.ui.presentation import load_constellation
+
+    scene = load_constellation(["gps-ops"], offline=True)
+    payload = scene.payload(enabled_groups=["gps-ops"])
+    assert [g["id"] for g in payload["groups"]] == ["gps-ops"]
+    assert all(payload["groups"][s["g"]]["id"] == "gps-ops" for s in payload["satellites"])
+
+
 
