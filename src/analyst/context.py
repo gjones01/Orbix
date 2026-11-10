@@ -10,6 +10,7 @@ import pandas as pd
 
 from src.analysis import stats
 from src.analysis.overview import overview
+from src.analysis.provenance import COLUMNS
 from src.api.catalog import GROUP_SPECS
 
 MAX_QUESTION = 1600
@@ -25,7 +26,62 @@ VARIABLES = {
     "semi_major_axis_km": ("semi-major", "semimajor", "semi major"),
     "element_age_hours": ("element age",),
     "raan_deg": ("raan", "ascending node"),
+    "arg_pericenter_deg": ("pericentre", "pericenter", "argument of perigee"),
+    "mean_anomaly_deg": ("mean anomaly",),
+    "mean_motion_dot": ("mean motion derivative", "mean_motion_dot"),
+    "rev_at_epoch": ("revolutions at epoch", "rev_at_epoch"),
+    "element_set_no": ("element set number", "element_set_no"),
+    "perigee_radius_km": ("perigee radius",),
+    "apogee_radius_km": ("apogee radius",),
+    "latitude_deg": ("latitude",),
+    "longitude_deg": ("longitude",),
 }
+
+
+def requested_variables(text: str, frame: pd.DataFrame) -> list[str]:
+    """Accept UI names, Python columns and the original API field names."""
+    found = []
+    for spec in COLUMNS:
+        if spec.name not in frame or not pd.api.types.is_numeric_dtype(frame[spec.name]) or spec.name == "norad_id":
+            continue
+        terms = (spec.name, spec.label.lower(), spec.source.removeprefix("OMM ").lower(),
+                 *VARIABLES.get(spec.name, ()))
+        if any(re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", text) for t in terms if t):
+            found.append(spec.name)
+    return found
+
+
+def fit_context(context: dict) -> dict:
+    """Remove optional sections whole, keeping the question's direct evidence."""
+    optional = ["record_examples", "catalogue_statistics", "altitude_bins"]
+    if "correlations" not in context.get("intents", []):
+        optional.append("correlations")
+    for key in optional:
+        if len(json.dumps(context, ensure_ascii=True)) > MAX_CONTEXT:
+            if context["evidence"].pop(key, None) is not None:
+                context.setdefault("omitted_evidence", []).append(key)
+    if len(json.dumps(context, ensure_ascii=True)) > MAX_CONTEXT:
+        raise ValueError("This context is too large. Ask about fewer groups or one satellite.")
+    return context
+
+
+def attach_raw_records(context: dict, scene) -> dict:
+    """Read original API records from the loaded scene; no network or default-filled OMM."""
+    import copy
+    result = copy.deepcopy(context)
+    evidence = result["evidence"]
+    candidates = evidence.get("satellites", []) or evidence.get("ranked_records", {}).get("records", [])
+    candidates = candidates or evidence.get("record_examples", {}).get("records", [])
+    raw = []
+    for row in candidates[:5]:
+        element = scene.element(row["norad_id"])
+        if element is not None:
+            raw.append({"norad_id": int(row["norad_id"]), "omm": dict(element.raw)})
+    evidence["raw_api_records"] = {"source": "Original CelesTrak OMM records underlying this snapshot; omitted fields remain absent, no defaults added.",
+                                   "retrieved_at": scene.catalog.retrieved_at.isoformat(),
+                                   "coverage": "Requested/ranked records, or at most five explicitly labelled examples; not the entire catalogue.",
+                                   "records": raw}
+    return fit_context(result)
 METHOD = (
     "Altitude flags compare within constellation AND orbital regime: outside "
     "Q1 - 1.5*IQR or Q3 + 1.5*IQR OR absolute modified z = "
@@ -87,11 +143,18 @@ def build_context(frame: pd.DataFrame, selected: tuple[str, ...], question: str,
     mentioned = [key for key, label in LABELS.items()
                  if any(re.search(r"\b" + re.escape(term) + r"\b", text)
                         for term in (key, label.lower(), "iss" if key == "stations" else label.lower()))]
-    groups = mentioned or list(selected)
+    groups = mentioned or list(selected) or sorted(available)
+    # A named group compared with "the others" needs both sides of the comparison.
+    # Keep missing named groups in scope so the UI can request their data explicitly.
+    if mentioned and re.search(r"\b(others|other (?:selected )?(?:groups|satellites|constellations)|the rest)\b", text):
+        groups = list(dict.fromkeys(mentioned + (list(selected) if len(selected) > 1 else sorted(available))))
     if re.search(r"\b(all|entire|whole) (loaded |available )?(groups|dataset|catalogue|catalog|satellites)\b", text):
         groups = sorted(available)
-    ids = {int(n) for n in re.findall(r"\b\d{5,9}\b", text)}
-    if "iss" in text.split():
+    # A measurement such as 10000 km is not a NORAD ID.
+    ids = {int(n) for n in re.findall(r"\b(?:norad(?:\s+(?:cat(?:alog)?(?:ue)?|id|number))?|satellite|catnr|about|describe|explain|object)\s*[:#-]?\s*(\d{1,9})\b(?!\s*(?:km|miles?|degrees?|minutes?|hours?)\b)", text)}
+    if re.fullmatch(r"\s*\d{1,9}\s*", text):
+        ids.add(int(text))
+    if re.search(r"\biss\b", text):
         ids.add(25544)
     # Name matching retrieves stable identifiers, never fuzzy invented satellites.
     for row in frame[["norad_id", "name"]].itertuples(index=False):
@@ -107,8 +170,7 @@ def build_context(frame: pd.DataFrame, selected: tuple[str, ...], question: str,
     subset = frame.loc[frame["constellation"].astype(str).isin(groups)].copy()
     subset["constellation"] = subset["constellation"].astype(str)
     intents = route(text)
-    variables = [key for key, aliases in VARIABLES.items() if key in frame and
-                 (key in text or any(alias in text for alias in aliases))]
+    variables = requested_variables(text, frame)
     if len(variables) < 2:
         variables = list(dict.fromkeys(variables + ["altitude_km", "inclination_deg", "period_min", "eccentricity"]))[:4]
     else:
@@ -122,18 +184,66 @@ def build_context(frame: pd.DataFrame, selected: tuple[str, ...], question: str,
         "intents": sorted(intents), "missing_norad_ids": sorted(ids - set(individual["norad_id"])),
         "limitations": "No operational status, health, mission history, deployment/deorbit intent, collision predictions, or causal evidence. Element age is relative to position time, not download time. Null means unavailable, never zero. Counts cover the loaded catalogue, not every satellite in existence.",
         "evidence": {},
+        "field_definitions": {s.name: {"unit": s.unit, "kind": s.kind.value, "source": s.source,
+                                      "meaning": s.note or s.label} for s in COLUMNS},
     }
     evidence = result["evidence"]
     if not individual.empty:
-        evidence["satellites"] = records(individual[[c for c in (
-            "norad_id", "name", "constellation", "regime", "epoch", "element_age_hours",
-            "altitude_km", "inclination_deg", "eccentricity", "period_min", "latitude_deg", "longitude_deg"
-        ) if c in individual]])
+        evidence["satellites"] = records(individual)
     if subset.empty:
         result["limitation"] = "No records for the requested scope. Select or load a group; missing IDs cannot be examined."
         return result
     evidence["population"] = records(stats.composition(subset))
     evidence["group_statistics"] = records(stats.describe(subset, variables))
+    # A broad numeric inventory prevents unfamiliar phrasing from hiding available data.
+    numeric = [s.name for s in COLUMNS if s.name in subset and s.name != "norad_id"
+               and pd.api.types.is_numeric_dtype(subset[s.name])]
+    pooled = subset.assign(constellation="answer scope")
+    evidence["catalogue_statistics"] = records(stats.describe(pooled, numeric)[
+        ["variable", "unit", "n", "missing", "min", "median", "max"]])
+    evidence["record_examples"] = {"coverage": "First five NORAD IDs in the answer scope; examples, not a representative sample or a full list.",
+                                   "records": records(subset.sort_values("norad_id").head(5))}
+    # Safely answer common rankings from actual values, never by executing model code.
+    if (requested_variables(text, frame) or re.search(r"\b(fastest|slowest|farthest|closest)\b", text)) and re.search(r"\b(highest|lowest|largest|smallest|most|least|fastest|slowest|farthest|closest)\b", text):
+        variable = variables[0]
+        ascending = bool(re.search(r"\b(lowest|smallest|least|closest)\b", text))
+        if "fastest" in text or "slowest" in text:
+            variable = "period_min"
+            ascending = "fastest" in text
+        ranked = subset.dropna(subset=[variable]).sort_values([variable, "norad_id"], ascending=[ascending, True]).head(5)
+        evidence["ranked_records"] = {"ordered_by": variable, "ascending": ascending,
+                                      "limit": 5, "records": records(ranked),
+                                      "note": "Period ranks orbital frequency, not instantaneous speed; instantaneous speed is not in this frame."}
+    # One explicit numerical condition, with units/denominators recorded in the evidence.
+    condition = re.search(r"\b(above|over|greater than|more than|below|under|less than|at least|at most)\s+(-?\d[\d,]*(?:\.\d+)?)\s*(km|kilomet(?:er|re)s?|mi|miles?|degrees?|deg|minutes?|min|hours?|h)?\b", text)
+    if condition:
+        operator, number, unit = condition.groups()
+        column = variables[0]
+        if not requested_variables(text, frame):
+            column = ("inclination_deg" if unit in {"degree", "degrees", "deg"} else
+                      "period_min" if unit in {"minute", "minutes", "min"} else
+                      "element_age_hours" if unit in {"hour", "hours", "h"} else "altitude_km")
+        expected_unit = next(s.unit for s in COLUMNS if s.name == column)
+        supplied_unit = ("km" if unit in {"km", "kilometer", "kilometers", "kilometre", "kilometres", "mi", "mile", "miles"} else
+                         "deg" if unit in {"degree", "degrees", "deg"} else
+                         "min" if unit in {"minute", "minutes", "min"} else
+                         "h" if unit in {"hour", "hours", "h"} else expected_unit)
+        threshold = float(number.replace(",", ""))
+        if unit in {"mi", "mile", "miles"} and column.endswith("_km"):
+            threshold *= 1.609344
+        values = subset[column]
+        compare = {"above": values.gt, "over": values.gt, "greater than": values.gt,
+                   "more than": values.gt, "below": values.lt, "under": values.lt,
+                   "less than": values.lt, "at least": values.ge, "at most": values.le}[operator]
+        matched = subset.loc[compare(threshold) & values.notna()]
+        evidence["threshold_query"] = {"column": column, "operator": operator, "threshold": threshold,
+                                       "unit": next(s.unit for s in COLUMNS if s.name == column),
+                                       "matched": len(matched), "assessed": int(values.notna().sum()),
+                                       "missing": int(values.isna().sum()),
+                                       "examples": records(matched.head(5)),
+                                       "coverage": "This is the parsed single condition; do not claim it answers additional conditions in the question."}
+        if supplied_unit != expected_unit:
+            evidence["threshold_query"] = {"limitation": "The supplied unit does not match the requested field; ask the user to clarify the field/unit instead of reporting a count."}
     evidence["missing"] = records(stats.missing_report(subset)[["column", "n", "missing", "missing_pct"]])
     ages = subset.loc[subset["element_age_hours"].notna()]
     evidence["freshness"] = records(stats.freshness(ages)) if not ages.empty else []
@@ -167,11 +277,4 @@ def build_context(frame: pd.DataFrame, selected: tuple[str, ...], question: str,
             pairs.at[index, "pooled_n"] = len(subset[[row.x, row.y]].dropna())
         evidence["correlations"] = records(pairs)
         result["correlation_method"] = "Spearman rank coefficients; pairwise complete observations; within-group minimum n=10. Undefined is not zero. Correlation is not causation."
-    # Trim optional details in whole records, never cut JSON or remove denominator/method.
-    for key in ("altitude_bins", "correlations"):
-        if len(json.dumps(result, ensure_ascii=True)) > MAX_CONTEXT:
-            evidence.pop(key, None)
-            result.setdefault("omitted_evidence", []).append(key)
-    if len(json.dumps(result, ensure_ascii=True)) > MAX_CONTEXT:
-        raise ValueError("This context is too large. Ask about fewer groups or one satellite.")
-    return result
+    return fit_context(result)

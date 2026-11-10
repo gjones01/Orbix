@@ -19,7 +19,12 @@ def configuration() -> provider.Config:
     return provider.load_config(secrets)
 
 
-def render_analyst(frame, groups: list[str]) -> None:
+def _load_group(group: str) -> None:
+    """Runs as a button callback before the sidebar renders on the next run."""
+    st.session_state[f"group_{group}"] = True
+
+
+def render_analyst(frame, groups: list[str], scene=None) -> None:
     st.subheader("Ask Orbix")
     st.write("Explore your satellite data with AI. Ask questions, investigate patterns, "
              "and understand what's happening above Earth.")
@@ -50,6 +55,8 @@ def render_analyst(frame, groups: list[str]) -> None:
     if st.button("Clear conversation", key="analyst_clear", disabled=not state["turns"] and "error" not in state):
         state.update(turns=[], last_submission=None)
         state.pop("error", None)
+        state.pop("missing_groups", None)
+        state.pop("data_notice", None)
         st.session_state.pop("orbix_analyst_reset_notice", None)
     question = None
     choices = grounding.suggestions(groups)
@@ -59,7 +66,7 @@ def render_analyst(frame, groups: list[str]) -> None:
             question = suggestion
     if st.button("Find interesting patterns", key="analyst_patterns", disabled=not enabled or not groups):
         question = "Find interesting patterns in the selected data. Give 3–5 evidence-based findings with numerical evidence and caveats."
-    with st.form("analyst_question_form", clear_on_submit=True):
+    with st.form("analyst_question_form", clear_on_submit=False):
         entered = st.text_input("Your question", key="analyst_question", max_chars=grounding.MAX_QUESTION,
                                 placeholder="Compare groups, ask about an outlier, or enter a NORAD ID…",
                                 disabled=not enabled)
@@ -67,21 +74,44 @@ def render_analyst(frame, groups: list[str]) -> None:
     if submitted:
         question = entered
     if question is not None:
+        state.pop("missing_groups", None)
+        state.pop("data_notice", None)
         with st.spinner("Examining this snapshot and preparing an explanation…"):
             try:
                 same_scope = [t for t in state["turns"] if t["context"]["analysis_filter"] == groups]
                 previous = same_scope[-1]["question"] if same_scope else ""
                 evidence = build_context(frame, tuple(groups), question,
                                          st.session_state.get("orbix_selected"), previous)
-                if not evidence["total_satellites"]:
-                    state["error"] = "No records match this question. Select or load a group, or use a NORAD ID present in the snapshot."
-                else:
-                    conversation.submit(state, uuid.uuid4().hex, config, evidence, question)
+                if scene is not None:
+                    evidence = grounding.attach_raw_records(evidence, scene)
+                if evidence["unavailable_groups"]:
+                    state["missing_groups"] = evidence["unavailable_groups"]
+                    names = ", ".join(grounding.LABELS.get(g, g) for g in evidence["unavailable_groups"])
+                    state["data_notice"] = (f"{names} data is not loaded in this snapshot. "
+                                      "Load the missing group below or enable it under Constellations to load "
+                                      "in the sidebar for its numerical results. The analyst can still explain "
+                                      "the concepts and use the available data.")
+                elif not evidence["total_satellites"]:
+                    missing_ids = evidence["missing_norad_ids"]
+                    state["data_notice"] = ("NORAD " + ", ".join(map(str, missing_ids)) + " is not in the loaded snapshot. "
+                                      "The analyst can explain the requested fields but cannot supply this object's missing values."
+                                      if missing_ids else
+                                      "No records are available for this scope. The analyst can explain concepts but cannot invent its values.")
+                conversation.submit(state, uuid.uuid4().hex, config, evidence, question)
                 st.session_state.pop("orbix_analyst_reset_notice", None)
             except ValueError as exc:
                 state["error"] = str(exc)
     if state.get("error"):
         st.warning(state["error"])
+    if state.get("data_notice"):
+        st.info(state["data_notice"])
+    for group in state.get("missing_groups", []):
+        if st.session_state.get(f"group_{group}"):
+            st.caption(f"{grounding.LABELS.get(group, group)} is enabled but has no records. "
+                       "Check its data-loading report on the Globe tab, then reload the scene.")
+        else:
+            st.button(f"Load {grounding.LABELS.get(group, group)}", key=f"analyst_load_{group}",
+                      on_click=_load_group, args=(group,))
     for turn in state["turns"]:
         with st.chat_message("user"):
             st.text(turn["question"])
@@ -95,7 +125,8 @@ def render_analyst(frame, groups: list[str]) -> None:
                 # Plain text prevents provider/user content from injecting links or images.
                 st.text(finding["title"])
                 st.text(finding["explanation"])
-                st.text("Caveat: " + finding["caveat"])
+                if finding["caveat"].strip():
+                    st.text("Note: " + finding["caveat"])
             with st.expander("Computed evidence & request details"):
                 st.json(ctx)
                 if turn["answer"].get("usage"):

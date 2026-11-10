@@ -96,6 +96,19 @@ def test_followup_and_filters(frame):
     assert context.snapshot_id(altered) != gps["snapshot"]
 
 
+def test_comparison_with_others_keeps_both_sides(frame):
+    selected = ("stations", "gps-ops", "weather", "oneweb")
+    ctx = context.build_context(frame, selected,
+        "Why are the starlink satellites so much lower altitude than the others?")
+    assert set(ctx["answer_groups"]) == set(selected) | {"starlink"}
+    assert ctx["unavailable_groups"] == ["starlink"]
+    # Exercise the loaded named-group case without relying on a bulk snapshot.
+    loaded = context.build_context(frame, selected,
+        "Why are OneWeb satellites lower altitude than the other groups?")
+    assert set(loaded["answer_groups"]) == set(selected)
+    assert not loaded["unavailable_groups"]
+
+
 def test_requested_numerical_variables_and_individual_flags(frame):
     ctx = context.build_context(frame, ("stations",), "Is B* drag correlated with mean motion?")
     pair = ctx["evidence"]["correlations"][0]
@@ -205,3 +218,92 @@ def test_config_requires_explicit_provider_and_env_precedence(monkeypatch):
     assert cfg.model == "environment-model"
     with pytest.raises(provider.AnalystError, match="HTTPS"):
         provider.Config("http://remote.invalid/v1", "model", "key").validate()
+
+
+@pytest.mark.parametrize("limit", ["bad", "127", "4097"])
+def test_invalid_response_budget_is_reported(monkeypatch, limit):
+    monkeypatch.setenv("ORBIX_LLM_MAX_TOKENS", limit)
+    cfg = provider.load_config({"ORBIX_LLM_BASE_URL": "https://example.invalid", "ORBIX_LLM_MODEL": "test", "ORBIX_LLM_API_KEY": "test"})
+    with pytest.raises(provider.AnalystError, match="ORBIX_LLM_MAX_TOKENS"):
+        cfg.validate()
+
+
+def test_configured_response_budget_reaches_request(monkeypatch, frame):
+    monkeypatch.setenv("ORBIX_LLM_MAX_TOKENS", "2048")
+    cfg = provider.load_config({"ORBIX_LLM_BASE_URL": "https://example.invalid", "ORBIX_LLM_MODEL": "test", "ORBIX_LLM_API_KEY": "test"})
+    cfg.validate()
+    ctx = context.build_context(frame, ("stations",), "Summarize")
+    assert provider.request_body(cfg, ctx, "Summarize", [])["max_tokens"] == 2048
+
+
+def test_all_individual_fields_and_api_aliases(frame):
+    ctx = context.build_context(frame, ("gps-ops",), "Explain RA_OF_ASC_NODE and MEAN_ANOMALY for NORAD 25544")
+    row = ctx["evidence"]["satellites"][0]
+    assert set(row) == set(frame.columns)
+    assert row["mean_anomaly_deg"] == pytest.approx(float(frame.loc[frame.norad_id == 25544, "mean_anomaly_deg"].iloc[0]))
+    assert {"raan_deg", "mean_anomaly_deg"} <= {r["variable"] for r in ctx["evidence"]["group_statistics"]}
+    assert ctx["field_definitions"]["altitude_km"]["kind"] == "propagated"
+    assert ctx["field_definitions"]["raan_deg"]["source"] == "OMM RA_OF_ASC_NODE"
+
+
+def test_measurement_not_misread_as_norad_and_python_threshold(frame):
+    ctx = context.build_context(frame, ("gps-ops", "weather"), "How many satellites are above 10000 km?")
+    assert not ctx["missing_norad_ids"]
+    assert "satellites" not in ctx["evidence"]
+    expected = frame.loc[frame.constellation.isin(["gps-ops", "weather"])]
+    evidence = ctx["evidence"]["threshold_query"]
+    assert evidence["matched"] == int((expected.altitude_km > 10000).sum())
+    assert evidence["assessed"] == int(expected.altitude_km.notna().sum())
+
+
+def test_ranked_values_and_no_filter_default_to_loaded(frame):
+    ctx = context.build_context(frame, (), "Which satellite has the highest inclination?")
+    assert ctx["total_satellites"] == len(frame)
+    top = ctx["evidence"]["ranked_records"]["records"][0]
+    assert top["inclination_deg"] == pytest.approx(frame.inclination_deg.max())
+
+
+def test_original_raw_records_without_imputation():
+    scene = load_constellation(["stations"], offline=True)
+    frame = catalog_frame(scene)
+    ctx = context.build_context(frame, ("stations",), "Explain raw API fields for ISS")
+    enriched = context.attach_raw_records(ctx, scene)
+    assert "raw_api_records" not in ctx["evidence"]  # Cached context is not mutated.
+    raw = enriched["evidence"]["raw_api_records"]["records"][0]["omm"]
+    assert raw == dict(scene.element(25544).raw)
+    assert len(json.dumps(enriched)) <= context.MAX_CONTEXT
+
+
+def test_prompt_permits_explanations_with_grounding(config, frame):
+    ctx = context.build_context(frame, ("oneweb",), "Why choose lower orbits?")
+    system = provider.request_body(config, ctx, "Why choose lower orbits?", [])["messages"][0]["content"]
+    assert "general background" in system
+    assert "original" in system and "CelesTrak API records" in system
+    assert "Do not reject" in system
+    assert "Never invent values" in system
+
+
+def test_style_file_is_read_for_each_submission(monkeypatch, tmp_path, config, frame):
+    path = tmp_path / "style.md"
+    path.write_text("Explain in everyday language.", encoding="utf-8")
+    monkeypatch.setattr(provider, "STYLE_PATH", path)
+    ctx = context.build_context(frame, ("stations",), "Summarize")
+    first = provider.request_body(config, ctx, "Summarize", [])["messages"][0]["content"]
+    assert first.endswith("Explain in everyday language.")
+    path.write_text("Use short paragraphs and define technical terms.", encoding="utf-8")
+    second = provider.request_body(config, ctx, "Summarize", [])["messages"][0]["content"]
+    assert second.endswith("Use short paragraphs and define technical terms.")
+
+
+def test_empty_repeated_caveat_is_allowed(frame):
+    value = answer()
+    value["findings"][0]["caveat"] = ""
+    ctx = context.build_context(frame, ("stations",), "Summarize")
+    assert provider.parse_answer(json.dumps(value), ctx)["findings"][0]["caveat"] == ""
+
+
+def test_missing_style_file_is_actionable(monkeypatch, tmp_path, config, frame):
+    monkeypatch.setattr(provider, "STYLE_PATH", tmp_path / "absent.md")
+    ctx = context.build_context(frame, ("stations",), "Summarize")
+    with pytest.raises(provider.AnalystError, match="response-style file"):
+        provider.request_body(config, ctx, "Summarize", [])

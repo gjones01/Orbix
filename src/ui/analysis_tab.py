@@ -595,7 +595,7 @@ def render_analysis(scene: ConstellationScene) -> list[int]:
     if subset.empty:
         st.info("Choose at least one group above to explore its satellites. "
                 "If no groups are available, check the data-loading report on the Globe tab.")
-        render_analyst(frame, groups)
+        render_analyst(frame, groups, scene)
         return []
     summary = cached.overview(subset)
     _cards(summary, labels, unit)
@@ -611,7 +611,7 @@ def render_analysis(scene: ConstellationScene) -> list[int]:
     _explore(subset, summary, labels, colours, unit)
     _discoveries(subset, summary, labels, unit)
 
-    render_analyst(frame, groups)
+    render_analyst(frame, groups, scene)
 
     st.subheader("Data quality & methodology")
     st.caption("Inspect the evidence behind these views. All diagnostics use your selected "
