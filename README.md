@@ -185,8 +185,8 @@ does not read secrets from `.env` for data access and never hardcodes keys.
 Groups are loaded **once per group** (never per satellite), de-duplicated by NORAD
 catalog ID, and an object that appears in several groups keeps every membership.
 A group that fails is reported as *failed* in the sidebar with its error; Orbix never
-substitutes one group for another. Starlink is off by default because it is ~10× the
-rest of the catalogue.
+substitutes one group for another. All five groups, including Starlink, are enabled
+on a fresh session. You can turn any group off in the sidebar.
 
 ### Rendering
 

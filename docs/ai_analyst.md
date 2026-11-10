@@ -68,7 +68,7 @@ IDs give the most reliable retrieval.
 Questions comparing a named group with “the others” include the other groups selected
 in Analysis. If a requested group is missing, Ask Orbix identifies it and offers a
 **Load [group]** button. The provider receives the available evidence plus an explicit missing-group notice; it must not invent a numerical comparison for the missing group.
-Starlink is off by default in the sidebar. Loading it uses the existing catalogue loader;
+Starlink is enabled by default in a fresh session. Loading it uses the existing catalogue loader;
 it does not send an AI request. The question stays in the input so it can be submitted
 again once loading finishes. Enabled groups with no records point to the Globe data report.
 

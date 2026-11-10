@@ -59,7 +59,7 @@ GROUP_SPECS: tuple[GroupSpec, ...] = (
     GroupSpec("oneweb", "OneWeb", "#c792ea", "OneWeb broadband constellation"),
     GroupSpec("starlink", "Starlink", "#58b6ff",
               "Large LEO broadband constellation (~11k objects)",
-              default_enabled=False),
+              default_enabled=True),
 )
 
 _BY_ID = {spec.id: spec for spec in GROUP_SPECS}

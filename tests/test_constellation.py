@@ -87,8 +87,7 @@ def two_elements(iss_payload):
 def test_group_specs_cover_the_five_requested_groups():
     ids = {spec.id for spec in GROUP_SPECS}
     assert ids == {"stations", "gps-ops", "weather", "oneweb", "starlink"}
-    # Starlink is the only group off by default: it is ~10x everything else.
-    assert {spec.id for spec in GROUP_SPECS if not spec.default_enabled} == {"starlink"}
+    assert all(spec.default_enabled for spec in GROUP_SPECS)
 
 
 def test_catalogue_deduplicates_by_norad_id(two_elements):

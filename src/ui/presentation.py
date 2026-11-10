@@ -71,7 +71,7 @@ element set or snapshot time computes a new trail; no scene arrays are retained.
 
 
 def default_groups() -> tuple[str, ...]:
-    """Groups enabled by default (everything except the very large Starlink set)."""
+    """Groups enabled on a fresh session, including Starlink."""
     return tuple(spec.id for spec in GROUP_SPECS if spec.default_enabled)
 
 

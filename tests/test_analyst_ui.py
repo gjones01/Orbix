@@ -67,6 +67,7 @@ def test_missing_configuration_and_error_recovery(app, monkeypatch):
 
 
 def test_starlink_question_load_and_resubmit(app, monkeypatch):
+    app.checkbox(key="group_starlink").uncheck().run()
     post = Mock(return_value=response())
     monkeypatch.setattr(provider.requests, "post", post)
     question = "Why are the starlink satellites so much lower altitude than the others?"
@@ -91,6 +92,7 @@ def test_starlink_question_load_and_resubmit(app, monkeypatch):
 
 
 def test_partial_comparison_still_reaches_model_with_missing_group_notice(app, monkeypatch):
+    app.checkbox(key="group_starlink").uncheck().run()
     post = Mock(return_value=response())
     monkeypatch.setattr(provider.requests, "post", post)
     app.text_input(key="analyst_question").set_value("Compare Starlink and OneWeb")

@@ -157,7 +157,8 @@ def run_browser_checks(url: str, timeout: float, settle: float, headful: bool,
             else:
                 # Streamlit styles the real input, so click through JavaScript rather
                 # than fighting Selenium's interactability check.
-                driver.execute_script("arguments[0].click();", labels[0])
+                if not labels[0].find_element(By.TAG_NAME, "input").is_selected():
+                    driver.execute_script("arguments[0].click();", labels[0])
                 time.sleep(1.5)
             frame = wait.until(component_frame)
 

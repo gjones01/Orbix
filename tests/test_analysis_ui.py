@@ -12,11 +12,13 @@ app.load_constellation_cached = lambda groups, window, offline, refresh, when: l
 app.main()
 ''', default_timeout=30).run()
     assert not test.exception
+    assert test.checkbox(key="group_starlink").value
     assert len(test.dataframe) > 5
     return test
 
 
 def test_filter_units_empty_selection_and_highlight_lifecycle(app):
+    app.checkbox(key="group_starlink").uncheck().run()
     app.multiselect(key="analysis_groups").set_value(["gps-ops"]).run()
     assert not app.exception
     # The single-group filter reaches the overview, statistics and original orbit map.
@@ -28,6 +30,7 @@ def test_filter_units_empty_selection_and_highlight_lifecycle(app):
     assert len(ids) == 32
     app.radio(key="analysis_units").set_value("mi").run()
     assert not app.exception
+    assert not app.checkbox(key="group_starlink").value
     assert app.session_state["orbix_highlight_ids"] == ids
     app.multiselect(key="analysis_groups").set_value([]).run()
     assert not app.exception

@@ -53,7 +53,6 @@ def main():
                 return result
 
             wait.until(lambda d: globe("return window.__orbix && window.__orbix.counts.total > 0;"))
-            driver.find_element(By.XPATH, "//label[contains(., 'Starlink')]").click()
             wait.until(lambda d: globe("return window.__orbix.counts.total > 10000;"))
 
             def click_element(element):

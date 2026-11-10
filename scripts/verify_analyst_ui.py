@@ -91,6 +91,10 @@ def main():
 
             click(wait.until(lambda d: d.find_element(By.XPATH, "//button[@role='tab' and normalize-space(.)='Analysis']")))
             wait.until(lambda d: button("analyst_patterns").is_enabled())
+            # Explicitly disable the default-on group to exercise missing-data recovery.
+            click(driver.find_element(By.XPATH, "//label[contains(., 'Starlink')]"))
+            wait.until(lambda d: d.find_element(By.CSS_SELECTOR, ".st-key-group_starlink input").is_selected() is False)
+            wait.until(lambda d: "Which selected group" in button("analyst_suggest_0").text)
             assert len(calls) == 0
             question = "Why are the starlink satellites so much lower altitude than the others?"
             field = wait.until(lambda d: d.find_element(By.CSS_SELECTOR, ".st-key-analyst_question input"))
