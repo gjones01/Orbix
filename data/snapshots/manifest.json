@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-09T19:26:16Z",
+  "generated_at": "2026-11-10T13:22:58Z",
   "snapshots": [
     {
       "cache_key": "catnr-25544",
@@ -690,6 +690,162 @@
       "record_count": 11201,
       "newest_epoch": "2026-11-09T08:00:01.999872Z",
       "sha256": "a545bbf06dd1889fedf44fc8b15ec61fc7f7e02413db7034520fa177b348656e"
+    },
+    {
+      "cache_key": "group-stations",
+      "query": {
+        "GROUP": "STATIONS"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=STATIONS&FORMAT=JSON",
+      "filename": "group-stations_20261110T053833Z.json",
+      "retrieved_at": "2026-11-10T05:38:33Z",
+      "http_status": 200,
+      "record_count": 19,
+      "newest_epoch": "2026-11-09T23:07:34.704768Z",
+      "sha256": "acb774339df4bd3514ec747c201afceb006a4ed2a3d0987675b6adb08f133d6d"
+    },
+    {
+      "cache_key": "group-gps-ops",
+      "query": {
+        "GROUP": "GPS-OPS"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=GPS-OPS&FORMAT=JSON",
+      "filename": "group-gps-ops_20261110T053833Z.json",
+      "retrieved_at": "2026-11-10T05:38:33Z",
+      "http_status": 200,
+      "record_count": 32,
+      "newest_epoch": "2026-11-09T21:24:07.746912Z",
+      "sha256": "f5a394aed008e534e6a195b6702adb43672dfbad7c3b318cbc77b8630e65858a"
+    },
+    {
+      "cache_key": "group-weather",
+      "query": {
+        "GROUP": "WEATHER"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=WEATHER&FORMAT=JSON",
+      "filename": "group-weather_20261110T053834Z.json",
+      "retrieved_at": "2026-11-10T05:38:34Z",
+      "http_status": 200,
+      "record_count": 74,
+      "newest_epoch": "2026-11-09T23:55:59.325024Z",
+      "sha256": "86a911ecd8c16cafdd7d23ed4b9ec7823899a5d1d03eb941c069bf2d64d0f876"
+    },
+    {
+      "cache_key": "group-oneweb",
+      "query": {
+        "GROUP": "ONEWEB"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=ONEWEB&FORMAT=JSON",
+      "filename": "group-oneweb_20261110T053834Z.json",
+      "retrieved_at": "2026-11-10T05:38:34Z",
+      "http_status": 200,
+      "record_count": 651,
+      "newest_epoch": "2026-11-10T00:00:02.000160Z",
+      "sha256": "7c9d6865474228cdbc64f4a93a50971fca051006f8af295022b2da55f1d887f4"
+    },
+    {
+      "cache_key": "group-starlink",
+      "query": {
+        "GROUP": "STARLINK"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=STARLINK&FORMAT=JSON",
+      "filename": "group-starlink_20261110T053837Z.json",
+      "retrieved_at": "2026-11-10T05:38:37Z",
+      "http_status": 200,
+      "record_count": 11201,
+      "newest_epoch": "2026-11-10T00:00:02.000160Z",
+      "sha256": "9861bbc4ea8c0b1e1b4d0a0be051671e8d3d32c728012aafc677013133ad6e5b"
+    },
+    {
+      "cache_key": "group-stations",
+      "query": {
+        "GROUP": "STATIONS"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=STATIONS&FORMAT=JSON",
+      "filename": "group-stations_20261110T132253Z.json",
+      "retrieved_at": "2026-11-10T13:22:53Z",
+      "http_status": 200,
+      "record_count": 19,
+      "newest_epoch": "2026-11-10T05:33:03.407616Z",
+      "sha256": "3274afc836c915a21ab77b1cf2b22af50cd5a1fbc7ca6bd77f3f14c75c13b502"
+    },
+    {
+      "cache_key": "group-gps-ops",
+      "query": {
+        "GROUP": "GPS-OPS"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=GPS-OPS&FORMAT=JSON",
+      "filename": "group-gps-ops_20261110T132255Z.json",
+      "retrieved_at": "2026-11-10T13:22:55Z",
+      "http_status": 200,
+      "record_count": 32,
+      "newest_epoch": "2026-11-10T07:32:55.100832Z",
+      "sha256": "0e32d72da017c18823a1465b1e89d253da9da7ffb70ae1e345aca8af8a760318"
+    },
+    {
+      "cache_key": "group-weather",
+      "query": {
+        "GROUP": "WEATHER"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=WEATHER&FORMAT=JSON",
+      "filename": "group-weather_20261110T132255Z.json",
+      "retrieved_at": "2026-11-10T13:22:55Z",
+      "http_status": 200,
+      "record_count": 74,
+      "newest_epoch": "2026-11-10T08:04:30.228672Z",
+      "sha256": "7882ae87e2c1987e06f5c6c880d59abd31fe2256b7803ed5aa474ce4adb4306d"
+    },
+    {
+      "cache_key": "group-gps-ops",
+      "query": {
+        "GROUP": "GPS-OPS"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=GPS-OPS&FORMAT=JSON",
+      "filename": "group-gps-ops_20261110T132255Z-2.json",
+      "retrieved_at": "2026-11-10T13:22:55Z",
+      "http_status": 200,
+      "record_count": 32,
+      "newest_epoch": "2026-11-10T07:32:55.100832Z",
+      "sha256": "0e32d72da017c18823a1465b1e89d253da9da7ffb70ae1e345aca8af8a760318"
+    },
+    {
+      "cache_key": "group-oneweb",
+      "query": {
+        "GROUP": "ONEWEB"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=ONEWEB&FORMAT=JSON",
+      "filename": "group-oneweb_20261110T132256Z.json",
+      "retrieved_at": "2026-11-10T13:22:56Z",
+      "http_status": 200,
+      "record_count": 651,
+      "newest_epoch": "2026-11-10T08:00:03.000384Z",
+      "sha256": "c9b5c771c4091b34dd00a0de24864fa504851eb946ed5a5de81d824adb0ed446"
+    },
+    {
+      "cache_key": "group-oneweb",
+      "query": {
+        "GROUP": "ONEWEB"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=ONEWEB&FORMAT=JSON",
+      "filename": "group-oneweb_20261110T132256Z-2.json",
+      "retrieved_at": "2026-11-10T13:22:56Z",
+      "http_status": 200,
+      "record_count": 651,
+      "newest_epoch": "2026-11-10T08:00:03.000384Z",
+      "sha256": "c9b5c771c4091b34dd00a0de24864fa504851eb946ed5a5de81d824adb0ed446"
+    },
+    {
+      "cache_key": "group-starlink",
+      "query": {
+        "GROUP": "STARLINK"
+      },
+      "url": "https://celestrak.org/NORAD/elements/gp.php?GROUP=STARLINK&FORMAT=JSON",
+      "filename": "group-starlink_20261110T132258Z.json",
+      "retrieved_at": "2026-11-10T13:22:58Z",
+      "http_status": 200,
+      "record_count": 11201,
+      "newest_epoch": "2026-11-10T08:00:03.000384Z",
+      "sha256": "89291b0fd3a9b838c4dd00e389d724b481b83d51452d818b8cac1b2a09b54201"
     }
   ]
 }

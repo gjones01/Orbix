@@ -302,6 +302,7 @@ python scripts/verify_propagation.py --offsets 0,30,45
 |---|---|
 | `streamlit : The term 'streamlit' is not recognized...` | The `streamlit.exe` launcher is installed but its folder is not on `PATH`. Use `python -m streamlit run app.py`, or add `%APPDATA%\Python\Python313\Scripts` to `PATH` (see above). |
 | `ModuleNotFoundError: No module named 'streamlit'` | Wrong interpreter: the packages are installed for a different Python, or the virtualenv is not activated. Run `python -m pip install -r requirements.txt`. |
+| `Error: Streamlit requires raw Python (.py) files, but the provided file has no extension.` | The target was typed with a trailing `\`, e.g. `python -m streamlit run app.py\`. PowerShell treats `\` as an ordinary character (it is not a line continuation, unlike bash), so Streamlit receives `app.py\` and `os.path.splitext()` finds no `.py` suffix. Rerun without the backslash: `python -m streamlit run app.py`. |
 | `Could not load orbital data (CelestrakNetworkError)` | No network and no snapshot. Turn off offline mode to retry, or fetch once while connected. |
 | Header shows `CACHED` when you expected `LIVE` | Working as intended: the local cache is authoritative for 2 hours, matching CelesTrak's refresh cadence. Tick "Force CelesTrak re-download" to bypass it. |
 | CelesTrak answers HTTP 403 "not updated" | CelesTrak allows one download per 2-hour update. Orbix reports it as a cache hit, not an error. |
@@ -564,3 +565,13 @@ saved snapshot exists, the application reports the failure instead of drawing
 satellites at made-up positions. Every rendered position is derived from a real
 OMM element set whose retrieval time and epoch are shown in the interface.
 
+
+
+### Streamlined workspace and User guide
+
+Globe and Analysis focus on satellite exploration, group comparisons, useful discoveries
+and Ask Orbix. The separate **User guide** tab contains instructions, data-quality and
+methodology explanations, the full statistical reference tools, simulation details,
+AI configuration help and evidence for previous answers. Sidebar controls retain group
+selection, playback range, saved-data mode and Reload scene; Force re-download is in
+User guide. See [User guide](docs/user_guide.md) for the maintained guidance text.

@@ -217,10 +217,13 @@ def _analysis_tab_checks(driver, report: dict, failures: list[str],
         "groups": "Explore satellite groups",
         "altitudes": "How high do satellites orbit?",
         "discoveries": "Interesting discoveries",
-        "methodology": "Data quality & methodology",
+        "analyst": "Ask Orbix",
     }
     found = {key: header in body for key, header in sections.items()}
     report["analysisSections"] = found
+    for technical in ("Data quality & methodology", "One CelesTrak request per group", "AI configuration & data use"):
+        if technical in body:
+            failures.append(f"technical reference leaked into Analysis: {technical}")
     for key, present in found.items():
         if not present:
             failures.append(f"analysis section missing: {key}")
@@ -345,6 +348,9 @@ def _analysis_tab_checks(driver, report: dict, failures: list[str],
     wait.until(lambda d: not d.find_elements(By.XPATH, "//button[normalize-space(.)='Clear globe highlights']"))
 
     # Disclosed diagnostics must be reachable, including the original scatter selection.
+    guide_tab = driver.find_element(By.XPATH, "//button[@role='tab' and normalize-space(.)='User guide']")
+    driver.execute_script("arguments[0].click();", guide_tab)
+    wait.until(lambda d: "Data quality & methodology" in d.find_element(By.TAG_NAME, "body").text)
     expected = {
         "Data freshness, missing values & source details": "Freshness and missing data",
         "Descriptive statistics & distributions": "All descriptive statistics",
@@ -398,6 +404,7 @@ def _analysis_tab_checks(driver, report: dict, failures: list[str],
     if severe:
         failures.append(f"{len(severe)} severe console errors during Analysis interactions")
 
+    driver.execute_script("arguments[0].click();", driver.find_element(By.XPATH, "//button[@role='tab' and normalize-space(.)='Analysis']"))
     if screenshot:
         Path(screenshot).parent.mkdir(parents=True, exist_ok=True)
         # The analysis page is long: a taller viewport captures more of it in one image.

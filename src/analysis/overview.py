@@ -104,9 +104,8 @@ def discoveries(frame: pd.DataFrame, summary: dict, labels: dict[str, str],
     n = len(summary["flagged"])
     items.append(Discovery("Unusual does not mean unsafe",
                   f"{n:,} altitude estimates stand out among {summary['assessed']:,} assessed "
-                  "satellites when compared within the same group and orbital regime. "
-                  "Different orbit shells can explain a flag; it does not establish danger, "
-                  "a malfunction or an incorrect position.", "unusual"))
+                  "satellites compared with similar satellites. "
+                  "Standing out does not mean a satellite is faulty or unsafe.", "unusual"))
     return items
 
 

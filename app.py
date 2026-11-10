@@ -27,7 +27,8 @@ from src.ui.loading import (
     load_constellation_cached,
 )
 from src.ui.analysis_tab import render_analysis
-from src.ui.panels import render_error, render_scene_report, render_selected
+from src.ui.user_guide import render_user_guide
+from src.ui.panels import render_error, render_selected
 from src.ui.presentation import ConstellationScene, default_groups
 
 GLOBE_HEIGHT = 720
@@ -55,8 +56,7 @@ def render_header(scene: ConstellationScene | None) -> None:
         chip = f'<span class="ox-chip {chip_class}">{label}</span>'
         meta = (
             f'<span class="ox-tagline">{scene.unique_count:,} satellites &middot; '
-            f"{scene.rendered_count:,} propagated &middot; "
-            f"{scene.keyframes} keyframes</span>"
+            f"{scene.rendered_count:,} shown</span>"
         )
     st.markdown(
         f"""
@@ -64,7 +64,7 @@ def render_header(scene: ConstellationScene | None) -> None:
           <div class="ox-brand">
             <span class="ox-wordmark">ORBIX</span>
             <span class="sep">&middot;</span>
-            <span class="ox-tagline">Constellation View &nbsp;/&nbsp; Phase 1</span>
+            <span class="ox-tagline">Satellite explorer</span>
             {meta}
           </div>
           {chip}
@@ -89,11 +89,7 @@ def render_sidebar() -> tuple[tuple[str, ...], float, bool, bool]:
             unsafe_allow_html=True,
         )
 
-        st.markdown("### Constellations to load")
-        st.caption(
-            "One CelesTrak request per group, cached for 2 hours. Changing a "
-            "filter inside the globe never re-downloads anything."
-        )
+        st.markdown("### Satellite groups")
         defaults = set(default_groups())
         chosen: list[str] = []
         for spec in GROUP_SPECS:
@@ -101,7 +97,6 @@ def render_sidebar() -> tuple[tuple[str, ...], float, bool, bool]:
                 f"{spec.label}",
                 value=spec.id in defaults,
                 key=f"group_{spec.id}",
-                help=spec.note,
             )
             if enabled:
                 chosen.append(spec.id)
@@ -112,36 +107,21 @@ def render_sidebar() -> tuple[tuple[str, ...], float, bool, bool]:
             list(WINDOW_CHOICES),
             index=1,
             label_visibility="collapsed",
-            help="The simulation starts at load time and runs forward. This sets how "
-                 "far ahead it can play. Keyframe density adapts to the number of "
-                 "satellites; the resulting interpolation error is shown under the "
-                 "globe.",
+            help="How far ahead you can play the simulation.",
         )
         window_minutes = WINDOW_CHOICES[window_label]
 
-        st.markdown("### Orbital data")
+        st.markdown("### Data")
         offline = st.toggle(
-            "Offline mode (snapshots only)",
+            "Use saved data",
             value=False,
-            help="Never contact CelesTrak. Uses the snapshots committed under "
-                 "data/snapshots/, so the app works with no network.",
+            help="Explore saved satellite data without downloading updates.",
         )
-        force_refresh = st.checkbox(
-            "Force re-download",
-            value=False,
-            help="Ignores the 2-hour cache. CelesTrak may answer HTTP 403 "
-                 "'not updated', which Orbix reports as a cache hit.",
-        )
+        force_refresh = st.session_state.get("guide_force_refresh", False)
         if st.button("Reload scene", type="secondary"):
             clear_scene_cache()
             st.rerun()
 
-        st.markdown("### Notes")
-        st.caption(
-            "SGP4 propagation in Python; the browser only interpolates between the "
-            "supplied keyframes. Hover identifies, click selects, and the selected "
-            "object keeps its trail while you rotate."
-        )
     return tuple(chosen), window_minutes, offline, force_refresh
 
 
@@ -198,7 +178,7 @@ def main() -> None:
     # the payload so the globe and the chart agree within the same run.
     highlight_ids = sorted(st.session_state.get("orbix_highlight_ids") or [])
 
-    globe_tab, analysis_tab = st.tabs(["Globe", "Analysis"])
+    globe_tab, analysis_tab, guide_tab = st.tabs(["Globe", "Analysis", "User guide"])
 
     with globe_tab:
         payload = scene.payload(
@@ -228,27 +208,17 @@ def main() -> None:
                 st.rerun()
             selected = st.session_state["orbix_selected"]
 
-        left, right = st.columns([1.15, 1], gap="medium")
-        with left:
-            render_selected(scene, selected)
-        with right:
-            render_scene_report(scene, payload_bytes)
-
-        last_event = st.session_state.get("orbix_last_event")
-        caption = (
-            f"Orbital prediction from CelesTrak elements &middot; playback window "
-            f"{scene.plan.start:%H:%M}\u2013{scene.plan.end:%H:%M} UTC, forward from load"
-            f" &middot; filtering and playback run in the browser without rerunning "
-            f"Streamlit"
-        )
-        if highlight_ids:
-            caption += f" &middot; {len(highlight_ids)} highlighted from Analysis"
-        if last_event:
-            caption += f" &middot; last event: select {last_event.get('norad_id')}"
-        st.markdown(f'<div class="ox-caption">{caption}</div>', unsafe_allow_html=True)
+        render_selected(scene, selected)
+        for status in scene.catalog.groups:
+            if not status.ok:
+                st.warning(f"{status.spec.label} could not be loaded. Try Reload scene or saved data.")
+        st.caption(f"Playback: {scene.plan.start:%H:%M}–{scene.plan.end:%H:%M} UTC · Estimated positions")
 
     with analysis_tab:
         render_analysis(scene)
+
+    with guide_tab:
+        render_user_guide(scene, payload_bytes)
 
 if __name__ == "__main__":
     main()

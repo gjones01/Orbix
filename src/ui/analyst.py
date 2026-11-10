@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 
 import streamlit as st
+import pandas as pd
 
 from src.analyst import context as grounding, conversation, provider
 
@@ -34,8 +35,7 @@ def render_analyst(frame, groups: list[str], scene=None) -> None:
     if st.session_state.get("orbix_analyst_reset_notice"):
         st.info("The loaded snapshot changed. Your previous conversation was cleared so answers use the new data.")
     group_text = ", ".join(grounding.LABELS.get(g, g) for g in groups) or "No groups selected"
-    st.caption(f"Current snapshot: {frame.attrs.get('anchor')} · {group_text} · "
-               f"ID {state['snapshot'][:10]}. Answers use km and degrees; globe playback does not change this snapshot.")
+    st.caption(f"Using {group_text} · Snapshot {pd.Timestamp(frame.attrs.get('anchor')):%d %b %Y, %H:%M} UTC")
     config = configuration()
     enabled = True
     try:
@@ -43,15 +43,7 @@ def render_analyst(frame, groups: list[str], scene=None) -> None:
     except provider.AnalystError as exc:
         st.info(str(exc))
         enabled = False
-    st.caption("Submitting sends your question, relevant computed statistics and up to two recent "
-               "turns to the configured AI provider. AI explanations can make mistakes; inspect the evidence below each answer.")
-    with st.expander("AI configuration & data use"):
-        st.write("Set ORBIX_LLM_BASE_URL, ORBIX_LLM_MODEL and ORBIX_LLM_API_KEY in the server "
-                 "environment or .streamlit/secrets.toml. See docs/ai_analyst.md. "
-                 "No provider is chosen automatically. Offline snapshot mode disables CelesTrak "
-                 "downloads; submitting to a remote AI provider still requires a network connection.")
-        if enabled:
-            st.text(f"Configured model: {config.model}")
+    st.caption("Questions and relevant satellite data are sent to the configured AI provider.")
     if st.button("Clear conversation", key="analyst_clear", disabled=not state["turns"] and "error" not in state):
         state.update(turns=[], last_submission=None)
         state.pop("error", None)
@@ -108,7 +100,7 @@ def render_analyst(frame, groups: list[str], scene=None) -> None:
     for group in state.get("missing_groups", []):
         if st.session_state.get(f"group_{group}"):
             st.caption(f"{grounding.LABELS.get(group, group)} is enabled but has no records. "
-                       "Check its data-loading report on the Globe tab, then reload the scene.")
+                       "Check its loaded-data report in User guide, then reload the scene.")
         else:
             st.button(f"Load {grounding.LABELS.get(group, group)}", key=f"analyst_load_{group}",
                       on_click=_load_group, args=(group,))
@@ -117,7 +109,7 @@ def render_analyst(frame, groups: list[str], scene=None) -> None:
             st.text(turn["question"])
         with st.chat_message("assistant"):
             ctx = turn["context"]
-            st.caption(f"Based on Orbix snapshot {ctx['snapshot'][:10]} · {ctx['position_timestamp_utc']} · "
+            st.caption(f"Snapshot {pd.Timestamp(ctx['position_timestamp_utc']):%d %b %Y, %H:%M} UTC · "
                        + ", ".join(grounding.LABELS.get(g, g) for g in ctx["answer_groups"]))
             if ctx["analysis_filter"] != groups:
                 st.caption("Earlier answer — the Analysis group selection has since changed.")
@@ -127,7 +119,3 @@ def render_analyst(frame, groups: list[str], scene=None) -> None:
                 st.text(finding["explanation"])
                 if finding["caveat"].strip():
                     st.text("Note: " + finding["caveat"])
-            with st.expander("Computed evidence & request details"):
-                st.json(ctx)
-                if turn["answer"].get("usage"):
-                    st.json(turn["answer"]["usage"])

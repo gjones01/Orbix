@@ -117,3 +117,16 @@ def test_large_unusual_results_are_paged_and_group_search_is_scoped(app):
     app.selectbox(key="analysis_unusual_group").set_value("oneweb").run()
     assert app.number_input(key="analysis_unusual_page").value == 1
     assert all("ONEWEB" in name for name in app.selectbox(key="analysis_unusual_satellite").options)
+
+
+def test_technical_reference_is_separate_from_exploration(app):
+    assert [tab.label for tab in app.tabs] == ["Globe", "Analysis", "User guide"]
+    analysis_expanders = {e.label for e in app.tabs[1].expander}
+    assert analysis_expanders == {"Explore unusual satellites", "Explore individual satellites"}
+    guide_expanders = {e.label for e in app.tabs[2].expander}
+    assert "Correlation analysis" in guide_expanders
+    assert "AI answer evidence & request details" in guide_expanders
+    sidebar_text = " ".join(e.value for e in app.sidebar.markdown) + " ".join(e.value for e in app.sidebar.caption)
+    assert "Notes" not in sidebar_text and "One CelesTrak request" not in sidebar_text
+    assert "SGP4" not in sidebar_text
+    assert not any("SGP4" in caption.value for caption in app.tabs[1].caption)

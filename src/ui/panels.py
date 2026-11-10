@@ -72,12 +72,10 @@ def render_selected(scene: ConstellationScene, selected: int | None) -> None:
             ("Satellite", html.escape(element.object_name)),
             ("NORAD catalog ID", f"{element.norad_cat_id}"),
             ("Constellation", html.escape(groups)),
-            ("Sub-satellite point", f"{latitude}, {longitude}"),
+            ("Location", f"{latitude}, {longitude}"),
             ("Altitude", altitude),
-            ("Inclination", f"{element.inclination:.2f}\u00b0"),
-            ("Orbital period", f"{element.period_minutes:.2f} min"),
-            ("Element epoch", element.epoch.strftime("%Y-%m-%d %H:%M UTC")),
-            ("Element age", f"{hours:+.1f} h"),
+            ("Orbit tilt", f"{element.inclination:.2f}\u00b0"),
+            ("Time around Earth", f"{element.period_minutes:.2f} min"),
         )
     )
     st.markdown(
@@ -89,8 +87,7 @@ def render_selected(scene: ConstellationScene, selected: int | None) -> None:
           </div>
           <div class="ox-rows">{rows_html}</div>
           <div class="ox-card-foot">
-            Position at the start of the playback window, Earth-fixed (WGS-84
-            geodetic). The globe trail spans one full orbital period.
+            Estimated position at the start of playback. The trail shows one trip around Earth.
           </div>
         </div>
         """,

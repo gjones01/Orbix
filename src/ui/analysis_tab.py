@@ -361,7 +361,7 @@ def _cards(summary: dict, labels: dict[str, str], unit: str) -> None:
         ("Most common group", labels.get(summary["largest"], summary["largest"] or "—"),
          f"{summary['largest_share']:.1f}% of selected satellites"),
         ("Typical altitude", f"{typical:,.0f} {unit}" if pd.notna(typical) else "Unavailable",
-         f"Median of {summary['valid_altitudes']:,} altitude estimates"),
+         f"Based on {summary['valid_altitudes']:,} height estimates"),
         ("Unusual altitudes", f"{len(summary['flagged']):,}",
          f"Among {summary['assessed']:,} assessed · worth exploring"),
     ]
@@ -411,36 +411,25 @@ def _explore(frame: pd.DataFrame, summary: dict, labels: dict[str, str],
             ids = frame.loc[(frame["constellation"].astype(str) == group)
                             & frame["altitude_km"].notna(), "norad_id"].tolist()
             _set_highlight(ids, reveal=True)
-    st.caption("Open the Globe tab to see highlighted satellites. Objects without a position "
-               "estimate cannot be highlighted. Each satellite is counted in its primary group.")
+    st.caption("Open Globe to see highlighted satellites.")
 
     st.subheader("How high do satellites orbit?")
     st.markdown("Compare heights above Earth. Narrow the range to see nearby orbits more clearly.")
     band = st.radio("Chart view", BANDS, horizontal=True, key="analysis_altitude_band")
     subset = altitude_subset(frame, band)
     boundary = f"{NEAR_EARTH_KM:,.0f} km" if unit == "km" else f"{NEAR_EARTH_KM / KM_PER_MILE:,.0f} mi (2,000 km)"
-    st.caption(f"Near Earth: below {boundary}. Higher Orbits: at or above this height. "
-               "This uses the usual low-Earth-orbit height boundary as a viewing guide; "
-               "an instantaneous height does not classify an entire orbit.")
-    st.caption(f"Showing {len(subset):,} of {summary['valid_altitudes']:,} available altitude "
-               f"estimates; {summary['valid_altitudes'] - len(subset):,} are outside this view and "
-               f"{summary['total'] - summary['valid_altitudes']:,} have no estimate. "
-               "Chart view only: summary cards, discoveries and outlier comparisons keep all selected groups.")
+    st.caption(f"Near Earth: below {boundary} · Showing {len(subset):,} satellites")
     st.plotly_chart(figures.altitude_ranges(cached.group_altitudes(subset), labels=labels,
                                            colours=colours, unit=unit),
                     key="analysis_altitude_ranges", config={"displayModeBar": False})
-    st.caption("Dot = typical height (median). Thick line = the middle half of satellites. "
-               "Thin line = lowest to highest. All heights are estimates at the snapshot time; "
-               "a line shows a range, not a continuous population. Hover over a dot for counts.")
+    st.caption("Dot: typical height · Thick line: middle half · Thin line: full range")
 
 
 def _unusual_explorer(frame: pd.DataFrame, summary: dict, labels: dict[str, str], unit: str) -> None:
     """Search and page the fixed overview flags; ship at most 50 visible rows."""
     with st.expander("Explore unusual satellites", expanded=st.session_state.get("analysis_investigate", False)):
         rows = cached.unusual_satellites(frame, summary)
-        st.caption("A satellite is flagged by either the IQR fence or modified z-score (or both). "
-                   "Each NORAD ID is counted once. Comparisons use the same constellation and orbital regime. "
-                   "Groups with fewer than four estimates are unassessed; a zero MAD disables the z-score rule.")
+        st.caption("Explore satellites whose heights stand out from similar satellites. A flag does not mean a fault.")
         if rows.empty:
             st.info("No unusual altitudes were found with the overview's default rules.")
             return
@@ -470,32 +459,23 @@ def _unusual_explorer(frame: pd.DataFrame, summary: dict, labels: dict[str, str]
                                key="analysis_unusual_page")
         shown = rows.iloc[(page - 1) * 50:page * 50].copy()
         factor = 1 if unit == "km" else 1 / KM_PER_MILE
-        table = shown[["norad_id", "name", "constellation", "regime", "value", "group_median", "difference_km"]].copy()
+        table = shown[["norad_id", "name", "constellation", "value", "group_median", "difference_km"]].copy()
         table["constellation"] = table["constellation"].astype(str).map(lambda g: labels.get(g, g))
         for col in ("value", "group_median", "difference_km"):
             table[col] *= factor
-        def reason(text):
-            rules = []
-            if "outside" in text:
-                rules.append("Outside IQR range")
-            if "modified z" in text:
-                rules.append("Large median-based deviation")
-            return " + ".join(rules)
-        table["Reason flagged"] = shown["reason"].map(reason)
         table = table.rename(columns={"norad_id": "NORAD ID", "name": "Satellite",
             "constellation": "Group", "regime": "Orbit regime",
-            "value": f"Altitude ({unit})", "group_median": f"Comparison median ({unit})",
+            "value": f"Altitude ({unit})", "group_median": f"Typical height ({unit})",
             "difference_km": f"Difference ({unit})"})
         st.caption(f"{len(rows):,} matches · page {page} of {pages} · up to 50 rows per page. "
-                   "Ordered by absolute difference from the comparison median. Negative differences mean lower altitudes.")
+                   "Largest height differences first.")
         _table(table, height=330, precision=1)
         names = shown.set_index("norad_id")["name"].to_dict()
         satellite = st.selectbox("Satellite on this page", shown["norad_id"].tolist(),
                                  format_func=lambda n: f"{names[n]} · NORAD {n}", key="analysis_unusual_satellite")
         if st.button("View on Globe", key="analysis_unusual_view"):
             _select_satellite(frame, int(satellite))
-        st.caption("Select here, then open the Globe tab at the top. Exact thresholds and "
-                   "modified z-scores are available under Data quality & methodology.")
+        st.caption("Select a satellite, then open Globe to see it.")
 
 
 def _discoveries(frame: pd.DataFrame, summary: dict, labels: dict[str, str], unit: str) -> None:
@@ -515,13 +495,6 @@ def _discoveries(frame: pd.DataFrame, summary: dict, labels: dict[str, str], uni
         else:
             if st.button("Investigate unusual satellites", key="analysis_investigate_button"):
                 st.session_state["analysis_investigate"] = True
-    flagged = summary["flagged"]
-    if not flagged.empty:
-        top = flagged["group"].value_counts()
-        group, regime = str(top.index[0]).split(" / ", 1)
-        st.caption(f"{int(top.iloc[0]):,} of {len(flagged):,} flags come from "
-                   f"{labels.get(group, group)} / {regime}. Even within a regime, distinct altitude "
-                   "populations can differ from the dominant cluster. Flags describe this snapshot, not satellite health.")
     _unusual_explorer(frame, summary, labels, unit)
     with st.expander("Explore individual satellites"):
         names = frame.set_index("norad_id")["name"].to_dict()
@@ -535,8 +508,7 @@ def _discoveries(frame: pd.DataFrame, summary: dict, labels: dict[str, str], uni
                      f"Orbit tilt: **{row['inclination_deg']:.1f}°**")
         else:
             st.info("No position estimate is available for this satellite at the snapshot time. "
-                    "Its orbital-element data is retained in the methodology tables.")
-        st.caption("Orbit tilt is the angle of the orbital plane relative to Earth's equator.")
+                    "Choose another satellite to view on Globe.")
         if st.button("View on Globe", key="analysis_satellite_view", disabled=not available):
             _select_satellite(frame, int(selected))
         st.caption("Select here, then open the Globe tab at the top to see its information panel and orbit trail.")
@@ -551,9 +523,7 @@ def render_analysis(scene: ConstellationScene) -> list[int]:
     st.title("A closer look at orbit")
     st.markdown("Explore the satellites in your loaded snapshot: which groups dominate, "
                 "how high they orbit, and what stands out.")
-    st.caption(f"Position estimates for {frame.attrs['anchor']:%d %b %Y · %H:%M} UTC. "
-               "Computed from CelesTrak orbital elements using SGP4; globe playback moves "
-               "forward from this time, while this analysis stays at the starting snapshot.")
+    st.caption(f"Snapshot: {frame.attrs['anchor']:%d %b %Y, %H:%M} UTC · Estimated positions")
     available = [spec.id for spec in GROUP_SPECS
                  if spec.id in set(frame["constellation"].astype(str))]
     # Reconcile persisted filters when the sidebar changes the loaded catalogue.
@@ -594,12 +564,11 @@ def render_analysis(scene: ConstellationScene) -> list[int]:
         _set_highlight(retained)
     if subset.empty:
         st.info("Choose at least one group above to explore its satellites. "
-                "If no groups are available, check the data-loading report on the Globe tab.")
+                "If no groups are available, check the loaded-data report in User guide.")
         render_analyst(frame, groups, scene)
         return []
     summary = cached.overview(subset)
     _cards(summary, labels, unit)
-    _freshness_summary(subset)
     if (st.session_state.get("analysis_globe_notice")
             and st.session_state.get("analysis_notice_id") == st.session_state.get("orbix_selected")
             and st.session_state.get("analysis_notice_id") in set(frame["norad_id"])):
@@ -613,7 +582,22 @@ def render_analysis(scene: ConstellationScene) -> list[int]:
 
     render_analyst(frame, groups, scene)
 
+    return sorted(st.session_state.get(_HIGHLIGHT_KEY) or [])
+
+
+def render_analysis_reference(scene: ConstellationScene) -> None:
+    """Detailed scientific tools live exclusively in User guide."""
+    frame = cached.analysis_frame(scene)
+    groups = st.session_state.get("analysis_saved_groups", list(frame["constellation"].astype(str).unique()))
+    subset = frame.loc[frame["constellation"].astype(str).isin(groups)].copy()
+    if subset.empty:
+        st.info("Select groups in Analysis to inspect their supporting data.")
+        return
+    colours = _colours()
+    summary = cached.overview(subset)
+    highlight = sorted(st.session_state.get(_HIGHLIGHT_KEY) or [])
     st.subheader("Data quality & methodology")
+    _freshness_summary(subset)
     st.caption("Inspect the evidence behind these views. All diagnostics use your selected "
                "groups. Technical tables and charts retain their documented scientific units.")
     with st.expander("Data freshness, missing values & source details"):
@@ -646,4 +630,3 @@ def render_analysis(scene: ConstellationScene) -> list[int]:
                    "Missing observations remain missing, and flags never remove satellites.")
         _table(subset, height=420)
         st.dataframe(column_docs(), width="stretch", hide_index=True, height=420)
-    return sorted(st.session_state.get(_HIGHLIGHT_KEY) or [])
