@@ -12,6 +12,7 @@ import requests
 from src.analyst.context import MAX_CONTEXT, MAX_QUESTION
 
 STYLE_PATH = Path(__file__).resolve().parents[2] / "prompts" / "analyst_style.md"
+MAX_RESPONSE_BYTES = 100000
 
 
 class AnalystError(Exception):
@@ -147,16 +148,21 @@ def complete(config: Config, context: dict, question: str, history: list[dict]) 
         # Redirects are disabled so credentials cannot be forwarded to another endpoint.
         with requests.post(config.base_url.rstrip("/") + "/chat/completions",
                            headers={"Authorization": "Bearer " + config.api_key},
-                           json=body, timeout=(5, 35), allow_redirects=False) as response:
+                           json=body, timeout=(5, 35), allow_redirects=False, stream=True) as response:
             if response.status_code in (401, 403):
                 raise AnalystError("Provider authentication failed. Check the configured key and account access.")
             if response.status_code == 429:
                 raise AnalystError("The provider rate or quota limit was reached. Wait and check your account; no retry was sent.")
             if response.status_code != 200:
                 raise AnalystError("The provider is unavailable or rejected the request. Check its base URL, model and token parameter; no fallback or retry was sent.")
-            if len(response.content) > 100000:
-                raise AnalystError("The provider returned an oversized response.")
-            payload = response.json()
+            # Bound the actual bytes read, including decompressed responses, rather
+            # than checking .content after requests has already buffered the body.
+            raw = bytearray()
+            for chunk in response.iter_content(chunk_size=8192):
+                if len(raw) + len(chunk) > MAX_RESPONSE_BYTES:
+                    raise AnalystError("The provider returned an oversized response.")
+                raw.extend(chunk)
+            payload = json.loads(raw)
         choice = payload["choices"][0]
         if choice.get("finish_reason") != "stop":
             raise AnalystError("The model did not finish a usable answer within the response limit. Try a narrower question.")

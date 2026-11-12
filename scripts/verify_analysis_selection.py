@@ -54,6 +54,9 @@ def main():
 
             wait.until(lambda d: globe("return window.__orbix && window.__orbix.counts.total > 0;"))
             wait.until(lambda d: globe("return window.__orbix.counts.total > 10000;"))
+            wait.until(lambda d: globe("return document.getElementById('stage').classList.contains('ready');"))
+            # Fixed-time selection checks explicitly pause the default autoplay.
+            globe("window.__orbix.setPlaying(false);")
 
             def click_element(element):
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", element)

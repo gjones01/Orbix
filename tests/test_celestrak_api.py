@@ -603,6 +603,43 @@ def test_manifest_can_be_rebuilt_from_snapshot_directory(tmp_path, iss_payload):
     assert result.retrieved_at == datetime(2026, 11, 4, 12, 0, 0, tzinfo=UTC)
 
 
+@pytest.mark.parametrize('manifest', [b'{"snapshots":null}', b'{"snapshots":7}',
+                                    b'{"snapshots":[null,3,"bad"]}', b'\xff\xfe\xfa'])
+def test_malformed_manifest_recovers_offline_data(tmp_path, iss_payload, manifest):
+    (tmp_path / 'manifest.json').write_bytes(manifest)
+    (tmp_path / 'catnr-25544_20261104T120000Z.json').write_text(json.dumps(iss_payload))
+    # A more recent file with invalid encoding must not prevent older recovery.
+    (tmp_path / 'catnr-25544_20261104T130000Z.json').write_bytes(b'\xff\xfe\xfa')
+    session = FakeSession([])
+    client = make_client(tmp_path, session, FakeClock(START), offline=True)
+    result = client.fetch_by_catalog_number(25544)
+    assert result.source == 'snapshot'
+    assert result.elements[0].norad_cat_id == 25544
+    assert not session.calls
+
+
+def test_snapshot_invalid_encoding_reports_format_error(tmp_path):
+    path = tmp_path / 'invalid.json'
+    path.write_bytes(b'\xff\xfe\xfa')
+    with pytest.raises(CelestrakFormatError):
+        load_snapshot(path)
+
+
+def test_corrupt_indexed_latest_recovers_older_offline_snapshot(tmp_path, iss_payload):
+    clock = FakeClock(START)
+    session = FakeSession([FakeResponse(payload=iss_payload), FakeResponse(payload=iss_payload)])
+    client = make_client(tmp_path, session, clock)
+    first = client.fetch_by_catalog_number(25544)
+    clock.advance(timedelta(hours=3))
+    second = client.fetch_by_catalog_number(25544)
+    second.snapshot.path(tmp_path).write_bytes(b'\xff\xfe\xfa')
+    client.offline = True
+    recovered = client.fetch_by_catalog_number(25544)
+    assert recovered.retrieved_at == first.retrieved_at
+    assert recovered.source == 'snapshot'
+    assert len(session.calls) == 2
+
+
 def test_manifest_entries_are_ordered_newest_last(tmp_path, iss_payload):
     session = FakeSession(
         [FakeResponse(payload=iss_payload), FakeResponse(payload=iss_payload)]

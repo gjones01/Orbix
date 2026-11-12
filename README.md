@@ -575,3 +575,7 @@ methodology explanations, the full statistical reference tools, simulation detai
 AI configuration help and evidence for previous answers. Sidebar controls retain group
 selection, playback range, saved-data mode and Reload scene; Force re-download is in
 User guide. See [User guide](docs/user_guide.md) for the maintained guidance text.
+
+A distant starfield that follows camera rotation, selection feedback and interactive-surface motion
+use the existing frontend, with reduced-motion support and no new dependencies.
+See [motion measurements](docs/motion.md) for the before/after benchmark.

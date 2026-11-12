@@ -1,0 +1,25 @@
+{
+  "satellites": 11977,
+  "viewport": "1600x1000",
+  "renderer": "Chrome headless / SwiftShader",
+  "samples": [
+    {
+      "draw_calls": 3,
+      "fps": 36.59703845307688,
+      "p95_ms": 20.799999999999272,
+      "update_ms": 1.71
+    },
+    {
+      "draw_calls": 3,
+      "fps": 41.863246725367596,
+      "p95_ms": 25.100000000000364,
+      "update_ms": 1.47
+    },
+    {
+      "draw_calls": 3,
+      "fps": 45.52251204446897,
+      "p95_ms": 25.099999999998545,
+      "update_ms": 1.27
+    }
+  ]
+}

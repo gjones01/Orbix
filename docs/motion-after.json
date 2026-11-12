@@ -1,0 +1,29 @@
+{
+  "satellites": 11977,
+  "viewport": "1600x1000",
+  "renderer": "Chrome headless / SwiftShader",
+  "samples": [
+    {
+      "draw_calls": 3,
+      "fps": 42.0042996533828,
+      "p95_ms": 29.19999999999891,
+      "update_ms": 1.31
+    },
+    {
+      "draw_calls": 3,
+      "fps": 42.8116288338117,
+      "p95_ms": 25.100000000000364,
+      "update_ms": 1.31
+    },
+    {
+      "draw_calls": 3,
+      "fps": 41.2138132748363,
+      "p95_ms": 29.30000000000109,
+      "update_ms": 3.09
+    }
+  ],
+  "reduced_motion": "passed",
+  "positions_unchanged_by_parallax": true,
+  "hidden_and_idle_pause": "passed",
+  "selection_uniforms": "passed"
+}

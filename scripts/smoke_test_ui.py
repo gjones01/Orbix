@@ -168,7 +168,8 @@ def run_browser_checks(url: str, timeout: float, settle: float, headful: bool,
         deadline = time.time() + timeout
         while time.time() < deadline:
             probe = driver.execute_script(PROBE)
-            if probe and probe.get("ready") and probe.get("total", 0) > 0:
+            if (probe and probe.get("ready") and probe.get("total", 0) > 0
+                    and probe.get("statusHidden") is True):
                 break
             time.sleep(0.5)
         else:
@@ -176,6 +177,9 @@ def run_browser_checks(url: str, timeout: float, settle: float, headful: bool,
             return {}, failures
 
         time.sleep(settle)
+        # Autoplay is covered by verify_startup_ui.py. Pin these coordinate/reset
+        # comparisons to the scene start, not an arbitrary frame after startup.
+        driver.execute_script("window.__orbix.setPlaying(false); window.__orbix.setTime(0);")
         initial = driver.execute_script(PROBE)
         report["initial"] = initial
 

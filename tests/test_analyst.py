@@ -143,6 +143,7 @@ def test_request_construction_and_no_secret_in_prompt(config, frame):
 def response(payload=None, status=200):
     mock = Mock(status_code=status, content=b"test")
     mock.json.return_value = payload or {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(answer())}}], "usage": {"total_tokens": 123, "secret": "do not expose"}}
+    mock.iter_content.side_effect = lambda **kwargs: iter([json.dumps(mock.json.return_value).encode("utf-8")])
     mock.__enter__ = Mock(return_value=mock)
     mock.__exit__ = Mock(return_value=False)
     return mock
@@ -158,6 +159,7 @@ def test_provider_success_exact_request(monkeypatch, config, frame):
     assert post.call_args.args[0] == "https://example.invalid/v1/chat/completions"
     assert post.call_args.kwargs["timeout"] == (5, 35)
     assert post.call_args.kwargs["allow_redirects"] is False
+    assert post.call_args.kwargs["stream"] is True
 
 
 @pytest.mark.parametrize("status,message", [(401, "authentication"), (403, "authentication"), (429, "quota"), (500, "unavailable"), (302, "rejected")])
@@ -307,3 +309,45 @@ def test_missing_style_file_is_actionable(monkeypatch, tmp_path, config, frame):
     ctx = context.build_context(frame, ("stations",), "Summarize")
     with pytest.raises(provider.AnalystError, match="response-style file"):
         provider.request_body(config, ctx, "Summarize", [])
+
+
+def test_satellite_name_lookup_does_not_match_number_prefixes(frame):
+    named = frame.iloc[:3].copy()
+    named["name"] = ["STARLINK-10", "STARLINK-100", "MY-STARLINK-1000"]
+    named["norad_id"] = [10001, 10002, 10003]
+    ctx = context.build_context(named, (), "Explain STARLINK-100's altitude")
+    assert [row["norad_id"] for row in ctx["evidence"]["satellites"]] == [10002]
+    # A name embedded in another word must not silently retrieve a satellite.
+    ctx = context.build_context(named, (), "Explain MYSTARLINK-100's altitude")
+    assert "satellites" not in ctx["evidence"]
+
+
+def test_oversized_provider_body_stops_reading_and_closes_response(monkeypatch, config, frame):
+    mock = response()
+    chunks_read = []
+
+    def chunks(**kwargs):
+        for _ in range(100):
+            chunks_read.append(1)
+            yield b"x" * 8192
+
+    mock.iter_content.side_effect = chunks
+    monkeypatch.setattr(provider.requests, "post", Mock(return_value=mock))
+    with pytest.raises(provider.AnalystError, match="oversized"):
+        provider.complete(config, context.build_context(frame, ("stations",), "Summarize"), "Summarize", [])
+    assert len(chunks_read) == 13  # Stop at the first chunk exceeding 100 KB.
+    mock.__exit__.assert_called_once()
+    mock.json.assert_not_called()
+
+
+def test_provider_utf8_split_across_chunks(monkeypatch, config, frame):
+    mock = response()
+    payload = mock.json.return_value
+    payload["choices"][0]["message"]["content"] = json.dumps(answer(), ensure_ascii=False)
+    payload["usage"]["provider_label"] = "caf\u00e9"
+    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    split = raw.index(b"\xc3") + 1
+    mock.iter_content.side_effect = lambda **kwargs: iter([raw[:split], raw[split:]])
+    monkeypatch.setattr(provider.requests, "post", Mock(return_value=mock))
+    result = provider.complete(config, context.build_context(frame, ("stations",), "Summarize"), "Summarize", [])
+    assert result["usage"] == {"total_tokens": 123}

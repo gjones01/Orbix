@@ -108,6 +108,51 @@ def test_interactions_keep_snapshot_after_shared_cache_expiry(app):
     assert app.session_state["orbix_analysis_frame"]["frame"].attrs["anchor"] == anchor
 
 
+def test_reload_and_restored_groups_bootstrap_globe(app, monkeypatch):
+    import app as application
+    payloads = []
+    monkeypatch.setattr(application, "globe_component", lambda payload, **kwargs: payloads.append(payload))
+    app.radio(key="analysis_units").set_value("mi").run()
+    assert "keyframes" not in payloads[-1]  # Ordinary reruns stay lightweight.
+    before = app.session_state["orbix_loaded_scene"]["scene"]
+    next(button for button in app.sidebar.button if button.label == "Reload scene").click().run()
+    assert not app.exception
+    after = app.session_state["orbix_loaded_scene"]["scene"]
+    assert after.catalog.satellites == before.catalog.satellites  # Same saved source.
+    assert after.plan.start != before.plan.start
+    assert payloads[-1].get("keyframes")
+
+    # Removing all groups unmounts the component. Restore the exact same scope.
+    for checkbox in app.sidebar.checkbox:
+        if checkbox.key.startswith("group_"):
+            checkbox.uncheck()
+    app.run()
+    assert not app.exception
+    assert "orbix_scene_signature" not in app.session_state
+    for checkbox in app.sidebar.checkbox:
+        if checkbox.key.startswith("group_"):
+            checkbox.check()
+    app.run()
+    assert not app.exception
+    assert payloads[-1].get("keyframes")
+
+
+def test_new_window_anchor_sends_keyframes_even_with_same_catalogue(app, monkeypatch):
+    from dataclasses import replace
+    from datetime import timedelta
+    import app as application
+    payloads = []
+    monkeypatch.setattr(application, "globe_component", lambda payload, **kwargs: payloads.append(payload))
+    saved = app.session_state["orbix_loaded_scene"]
+    scene = saved["scene"]
+    plan = replace(scene.plan, start=scene.plan.start + timedelta(minutes=1),
+                   end=scene.plan.end + timedelta(minutes=1))
+    app.session_state["orbix_loaded_scene"] = {**saved, "scene": replace(scene, plan=plan)}
+    app.run()
+    assert not app.exception
+    assert payloads[-1].get("keyframes")
+
+
 def test_large_unusual_results_are_paged_and_group_search_is_scoped(app):
     app.checkbox(key="group_starlink").check().run()
     assert not app.exception

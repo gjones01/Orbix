@@ -1,0 +1,32 @@
+{
+  "satellites": 11977,
+  "viewport": "1600x1000",
+  "renderer": "Chrome headless / SwiftShader",
+  "samples": [
+    {
+      "draw_calls": 5,
+      "fps": 53.20740913172158,
+      "p95_ms": 25,
+      "update_ms": 1.31
+    },
+    {
+      "draw_calls": 5,
+      "fps": 54.83549352117964,
+      "p95_ms": 25,
+      "update_ms": 1.31
+    },
+    {
+      "draw_calls": 5,
+      "fps": 54.60659940905259,
+      "p95_ms": 24.900000000001455,
+      "update_ms": 1.35
+    }
+  ],
+  "reduced_motion": "passed",
+  "sky_rotation_and_zoom": "passed",
+  "satellite_positions_unchanged": true,
+  "hidden_motion_pause": "passed",
+  "selection_uniforms": "passed",
+  "sunlight_alignment_time_and_seasons": "passed",
+  "lens_flare_visible_and_occluded_pixels": "passed"
+}

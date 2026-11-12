@@ -15,11 +15,15 @@
  * Markers and tracks are Earth-fixed, matching the globe's rotating mesh.
  */
 import * as THREE from './vendor/three.module.min.js';
+import { createMotion } from './motion.js';
+import { createStarfield } from './starfield.js';
+import { createSunlight } from './sunlight.js';
 
 (function () {
   'use strict';
 
   const DEG = Math.PI / 180;
+  const motion = createMotion();
 
   // ------------------------------------------------------------------ //
   // 1. Streamlit component bridge (protocol version 1)
@@ -117,27 +121,40 @@ import * as THREE from './vendor/three.module.min.js';
       this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
       this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
       this.geometry.setAttribute('size', new THREE.BufferAttribute(this.sizes, 1));
+      this.geometry.setAttribute('satIndex', new THREE.BufferAttribute(Float32Array.from({length: count}, (_, i) => i), 1));
 
       this.material = new THREE.ShaderMaterial({
+        uniforms: { selected: {value: -1}, reveal: {value: 1}, focus: {value: 0} },
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         vertexColors: true,
         vertexShader: [
           'attribute float size;',
+          'attribute float satIndex;',
+          'uniform float selected;',
+          'uniform float reveal;',
+          'varying float vSelected;',
+          'varying float vVisible;',
           'varying vec3 vColor;',
           'void main() {',
           '  vColor = color;',
+          '  vVisible = step(0.1, size);',
+          '  vSelected = 1.0 - step(0.5, abs(satIndex - selected));',
           '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
           '  gl_Position = projectionMatrix * mv;',
           // Perspective-scaled but clamped, so markers stay sensible at any zoom.
           '  float scale = clamp(260.0 / max(1.0, -mv.z), 0.45, 2.4);',
-          '  gl_PointSize = size * scale;',
+          '  gl_PointSize = size * scale * mix(1.0, mix(0.455, 1.0, reveal), vSelected);',
           '}',
         ].join('\n'),
         fragmentShader: [
           'varying vec3 vColor;',
+          'varying float vSelected;',
+          'varying float vVisible;',
+          'uniform float focus;',
           'void main() {',
+          '  if (vVisible < 0.5) discard;',
           '  vec2 d = gl_PointCoord - vec2(0.5);',
           '  float r = length(d) * 2.0;',
           '  if (r > 1.0) discard;',
@@ -147,7 +164,7 @@ import * as THREE from './vendor/three.module.min.js';
           '  float core = smoothstep(0.46, 0.16, r);',
           '  float halo = pow(max(0.0, 1.0 - r), 2.4) * 0.45;',
           '  float alpha = clamp(core * 0.95 + halo, 0.0, 1.0);',
-          '  gl_FragColor = vec4(vColor * (0.45 + 0.55 * core), alpha);',
+          '  gl_FragColor = vec4(vColor * (0.45 + 0.55 * core), alpha * (1.0 - focus * 0.12 * (1.0 - vSelected)));',
           '}',
         ].join('\n'),
       });
@@ -224,6 +241,10 @@ import * as THREE from './vendor/three.module.min.js';
 
     /** Highlight one satellite by index, or -1 to clear. */
     setSelection(index, highlight) {
+      if (this.selectedIndex === index) return;
+      this.selectionStarted = performance.now();
+      this.material.uniforms.selected.value = index;
+      this.material.uniforms.reveal.value = motion.active ? 0 : 1;
       if (this.selectedIndex >= 0 && this.savedColour) {
         this.colors.set(this.savedColour, this.selectedIndex * 3);
       }
@@ -241,6 +262,16 @@ import * as THREE from './vendor/three.module.min.js';
       this.geometry.attributes.size.needsUpdate = true;
     }
 
+    /** Uniform-only emphasis; no position updates or full-buffer uploads. */
+    tickMotion(now) {
+      if (this.selectionStarted == null) return;
+      const t = motion.active ? Math.min(1, (now - this.selectionStarted) / 240) : 1;
+      const eased = 1 - Math.pow(1 - t, 3);
+      this.material.uniforms.reveal.value = eased;
+      this.material.uniforms.focus.value = this.selectedIndex >= 0 ? eased : 0;
+      if (t === 1) this.selectionStarted = null;
+    }
+
     /** Screen-space picking; returns a visible vertex index or -1. */
     pick(ndcX, ndcY, camera, viewportHeight) {
       const distance = camera.position.length();
@@ -252,7 +283,11 @@ import * as THREE from './vendor/three.module.min.js';
       const hits = this._raycaster.intersectObject(this.points, false);
       for (let h = 0; h < hits.length; h++) {
         const index = hits[h].index;
-        if (index >= 0 && index < this.count && this.visible[index]) return index;
+        if (index < 0 || index >= this.count || !this.visible[index]) continue;
+        // Points raycasting does not know about the opaque Earth mesh. Match the
+        // rendered visibility before offering a hover/click target.
+        const point = new THREE.Vector3().fromArray(this.positions, index * 3);
+        if (!earthOccludes(point, camera.position, this.radius)) return index;
       }
       return -1;
     }
@@ -263,6 +298,15 @@ import * as THREE from './vendor/three.module.min.js';
   // ------------------------------------------------------------------ //
   const HIGHLIGHT = [1.0, 1.0, 1.0];
 
+  function earthOccludes(point, cameraPosition, radius) {
+    const ray = point.clone().sub(cameraPosition);
+    const distance = ray.length();
+    if (!distance) return false;
+    ray.multiplyScalar(1 / distance);
+    const t = Math.min(distance, Math.max(0, -cameraPosition.dot(ray)));
+    return cameraPosition.clone().addScaledVector(ray, t).length() < radius;
+  }
+
   function hexToRgb(hex) {
     const value = hex.replace('#', '');
     return [
@@ -272,27 +316,43 @@ import * as THREE from './vendor/three.module.min.js';
     ];
   }
 
+  let earthReady = false, sceneReady = false, revealScheduled = false;
+  let sunlight = null;
+  function revealScene() {
+    if (!earthReady || !sceneReady || revealScheduled) return;
+    revealScheduled = true;
+    // Let the shared canvas paint Earth, points and any selected trail before
+    // revealing it. This runs once, never on ordinary Streamlit reruns.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      document.getElementById('stage').classList.add('ready');
+      state.lastFrameMs = performance.now();
+      setPlaying(true);
+      hideStatus();
+    }));
+  }
+
   function initGlobe() {
     if (typeof Globe !== 'function') {
       showStatus('The 3D engine could not be loaded.',
         'vendor/globe.gl.min.js is missing or blocked');
       return null;
     }
-    const globe = Globe({ rendererConfig: { antialias: false, alpha: true } })(
-      document.getElementById('globe'));
+    // Configure assets and readiness before mounting: mounting first can emit
+    // readiness for an untextured globe before our callback is registered.
+    const globe = Globe({ animateIn: false, rendererConfig: { antialias: false, alpha: true } });
     globe.backgroundColor('rgba(0,0,0,0)')
          .globeImageUrl('./assets/earth-blue-marble.jpg')
          .bumpImageUrl('./assets/earth-topology.png')
-         .atmosphereColor('#4a9be0')
-         .atmosphereAltitude(0.16)
+         .showAtmosphere(false)
          .pathPoints('points').pathPointLat('lat').pathPointLng('lng')
          .pathPointAlt('alt').pathColor('color').pathStroke('stroke')
          .pathTransitionDuration(0)
-         .onGlobeReady(() => { hideStatus(); });
+         .onGlobeReady(() => { earthReady = true; revealScene(); })
+         (document.getElementById('globe'));
 
     const material = globe.globeMaterial();
     material.shininess = 9;
-    material.specular.setRGB(0.045, 0.07, 0.11);
+    material.specular.setRGB(0.045, 0.045, 0.045);
     material.bumpScale = 0.28;
 
     const controls = globe.controls();
@@ -306,6 +366,10 @@ import * as THREE from './vendor/three.module.min.js';
     controls.autoRotate = false;
 
     state.globe = globe;
+    const stars = createStarfield();
+    stars.material.uniforms.pixelRatio.value = globe.renderer().getPixelRatio();
+    globe.scene().add(stars);
+    sunlight = createSunlight(globe);
     state.radius = globe.getGlobeRadius();
     return globe;
   }
@@ -336,6 +400,7 @@ import * as THREE from './vendor/three.module.min.js';
 
   function redraw() {
     if (!layer) return;
+    if (sunlight) sunlight.update(currentTime());
     const started = performance.now();
     const drawn = layer.update(state.tNorm);
     const elapsed = performance.now() - started;
@@ -346,6 +411,7 @@ import * as THREE from './vendor/three.module.min.js';
   }
 
   function tick(now) {
+    if (layer) layer.tickMotion(now);
     const dt = state.lastFrameMs ? (now - state.lastFrameMs) / 1000 : 0;
     state.lastFrameMs = now;
     if (state.playing && state.keyframes) {
@@ -489,11 +555,7 @@ import * as THREE from './vendor/three.module.min.js';
     if (Math.abs(projected.x) > .98 || Math.abs(projected.y) > .95 ||
         projected.z < -1 || projected.z > 1) return;
     // Do not draw a label through Earth when the user rotates to the far side.
-    const ray = point.clone().sub(camera.position);
-    const distance = ray.length();
-    ray.normalize();
-    const t = Math.min(distance, Math.max(0, -camera.position.dot(ray)));
-    if (camera.position.clone().addScaledVector(ray, t).length() < state.radius) return;
+    if (earthOccludes(point, camera.position, state.radius)) return;
     const canvas = state.globe.renderer().domElement;
     marker.style.left = ((projected.x + 1) * canvas.clientWidth / 2) + 'px';
     marker.style.top = ((1 - projected.y) * canvas.clientHeight / 2) + 'px';
@@ -603,7 +665,8 @@ import * as THREE from './vendor/three.module.min.js';
     drawSelectedTrack(payload.selected_track);
     applyAnalysisAction(payload.analysis_action);
     redraw();
-    hideStatus();
+    sceneReady = true;
+    revealScene();
   }
 
   // ------------------------------------------------------------------ //
@@ -703,6 +766,7 @@ import * as THREE from './vendor/three.module.min.js';
   function selectIndex(index, notifyPython) {
     if (index < 0 || index >= state.metadata.length) return;
     const meta = state.metadata[index];
+    const changed = layer && layer.selectedIndex !== index;
     state.selection = index;
     state.selectedId = meta.id;
     if (layer) layer.setSelection(index, HIGHLIGHT);
@@ -711,6 +775,7 @@ import * as THREE from './vendor/three.module.min.js';
     document.getElementById('selected-meta').textContent =
       'NORAD ' + meta.id + ' \u00b7 ' + meta.alt.toFixed(1) + ' km \u00b7 ' +
       meta.incl.toFixed(2) + '\u00b0 \u00b7 ' + meta.period.toFixed(2) + ' min';
+    if (changed) motion.emphasize(document.getElementById('panel-selection'));
     if (notifyPython) {
       state.lastSentSelection = meta.id;
       state.selectionEvent = (state.selectionEvent || 0) + 1;
@@ -760,14 +825,30 @@ import * as THREE from './vendor/three.module.min.js';
 
     const canvas = state.globe.renderer().domElement;
     let lastHover = 0;
+    let pointerStart = null, dragged = false;
+    canvas.addEventListener('pointerdown', event => {
+      pointerStart = {x:event.clientX, y:event.clientY};
+      dragged = false;
+    });
+    canvas.addEventListener('pointermove', event => {
+      if (pointerStart && Math.hypot(event.clientX-pointerStart.x, event.clientY-pointerStart.y) > 5) {
+        dragged = true;
+        hideTooltip();
+      }
+    });
+    canvas.addEventListener('pointerup', () => { pointerStart = null; });
+    canvas.addEventListener('pointercancel', () => { pointerStart = null; dragged = true; });
     canvas.addEventListener('mousemove', (event) => {
+      if (pointerStart) return;
       const now = performance.now();
       if (now - lastHover < 45) return;      // throttle picking to ~22 Hz
       lastHover = now;
       handleHover(event);
     });
     canvas.addEventListener('mouseleave', hideTooltip);
-    canvas.addEventListener('click', handleClick);
+    canvas.addEventListener('click', event => {
+      if (!dragged) handleClick(event);
+    });
   }
 
   // ------------------------------------------------------------------ //
@@ -806,6 +887,7 @@ import * as THREE from './vendor/three.module.min.js';
 
   // Debug handle for the browser smoke test and the developer console.
   window.__orbix = {
+    motion: motion,
     state: state,
     get layer() { return layer; },
     get metadata() { return state.metadata; },

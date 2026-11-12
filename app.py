@@ -133,6 +133,9 @@ def main() -> None:
     groups, window_minutes, offline, force_refresh = render_sidebar()
 
     if not groups:
+        # This run removes the iframe. A later selection must bootstrap a fresh
+        # component even if it restores the same pinned scene.
+        st.session_state.pop("orbix_scene_signature", None)
         render_header(None)
         st.markdown(
             '<div class="ox-notice">Select at least one constellation in the sidebar.'
@@ -154,6 +157,7 @@ def main() -> None:
                 st.session_state["orbix_loaded_scene"] = saved
             scene = saved["scene"]
     except Exception as exc:  # noqa: BLE001 - surfaced to the user verbatim
+        st.session_state.pop("orbix_scene_signature", None)
         render_header(None)
         render_error(exc, offline)
         return
@@ -171,6 +175,9 @@ def main() -> None:
         tuple(sorted(groups)),
         round(window_minutes, 2),
         scene.catalog.retrieved_at.isoformat(),
+        scene.plan.start.isoformat(),
+        scene.plan.end.isoformat(),
+        scene.sample.shape,
     )
     include_keyframes = st.session_state.get("orbix_scene_signature") != signature
 

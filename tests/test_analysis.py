@@ -100,23 +100,30 @@ def test_derived_quantities_follow_from_the_elements(frame):
         assert 90.0 < float(iss["period_min"].iloc[0]) < 95.0
 
 
-def test_altitude_is_not_semi_major_axis_minus_earth_radius(frame):
+def test_altitude_is_not_semi_major_axis_minus_earth_radius(frame, scene):
     """The distinction the provenance registry exists to protect.
 
     ``a - R_earth`` ignores eccentricity and the ellipsoid, so it approximates altitude only
-    for a circular orbit. The slack is bounded by ``a*e`` (the along-orbit radius change)
-    plus ~21 km (geodetic height is not a radial difference), and measured on this snapshot
-    the near-circular objects agree to within 7.5 km while the worst object - a FREGAT
-    debris fragment at e = 0.093 - is off by 681 km. Hence: both columns, never one as a
-    stand-in for the other.
+    for a circular orbit. Compare at each element's epoch: its mean a/e do not bound
+    a later SGP4 orbit after atmospheric drag has changed it. In particular, low
+    HMU-SAT2 elements descend substantially within a few days. The epoch slack
+    allows ``a*e`` for eccentricity plus 21 km for ellipsoid/mean-element effects.
+    Missing propagated positions must remain missing, not become a false altitude.
     """
-    gap = ((frame["semi_major_axis_km"] - WGS84_A_KM) - frame["altitude_km"]).abs()
+    from src.orbital.propagation import propagate
+
+    epoch_altitudes = frame["norad_id"].map(
+        lambda n: propagate(scene.element(n), scene.element(n).epoch).altitude_km
+    )
+    gap = ((frame["semi_major_axis_km"] - WGS84_A_KM) - epoch_altitudes).abs()
     slack = frame["semi_major_axis_km"] * frame["eccentricity"]
 
-    assert bool((gap <= slack + 21.0).all())            # physical bound, every row
+    assert bool((gap <= slack + 21.0).all())            # epoch bound, every row
     near_circular = frame.loc[frame["eccentricity"] < 1e-3].index
-    assert gap.loc[near_circular].max() < 25.0          # measured: 7.5 km
-    assert gap.max() > 100.0                            # measured: 681 km
+    assert gap.loc[near_circular].max() < 25.0
+    assert gap.max() > 100.0
+    actual_gap = ((frame["semi_major_axis_km"] - WGS84_A_KM) - frame["altitude_km"]).abs()
+    assert actual_gap.dropna().max() > 100.0
 
 
 def test_validate_frame_rejects_duplicates_and_undocumented_columns(frame):

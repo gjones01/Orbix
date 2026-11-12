@@ -159,7 +159,7 @@ def build_context(frame: pd.DataFrame, selected: tuple[str, ...], question: str,
     # Name matching retrieves stable identifiers, never fuzzy invented satellites.
     for row in frame[["norad_id", "name"]].itertuples(index=False):
         name = str(row.name).lower()
-        if len(name) >= 4 and name in text:
+        if len(name) >= 4 and re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", text):
             ids.add(int(row.norad_id))
     if selected_norad and re.search(r"\b(selected|this) satellite\b", text):
         ids.add(int(selected_norad))

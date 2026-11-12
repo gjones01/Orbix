@@ -286,6 +286,28 @@ _CSS = """
     border-color: rgba(88, 182, 255, 0.55);
     color: #ffffff;
   }
+  /* Restrained motion: interactive surfaces only, with no chart-value tweening. */
+  .ox-card, .ox-analysis-metric, .ox-analysis-discovery,
+  [data-testid="stButton"] button, [data-testid="stExpander"] summary {
+    transition: border-color 180ms ease, background-color 180ms ease, transform 180ms cubic-bezier(.2,.7,.2,1);
+  }
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .ox-analysis-discovery:hover { transform: translateY(-2px); background: #101b29; }
+    .ox-analysis-metric:hover, .ox-card:hover { border-color: rgba(88,182,255,.38); }
+    [data-testid="stButton"] button:hover { transform: translateY(-1px); }
+  }
+  [data-testid="stButton"] button:focus-visible,
+  [data-testid="stExpander"] summary:focus-visible { outline: 2px solid #58b6ff; outline-offset: 3px; }
+  /* A native disclosure animation only runs when opened, not on every metric rerun. */
+  @keyframes ox-disclose { from { opacity: .75; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  [data-testid="stExpander"] details[open] > div { animation: ox-disclose 180ms ease-out; }
+  @media (prefers-reduced-motion: reduce) {
+    .ox-card, .ox-analysis-metric, .ox-analysis-discovery,
+    [data-testid="stButton"] button, [data-testid="stExpander"] summary,
+    [data-testid="stExpander"] details[open] > div {
+      animation: none !important; transition: none !important; transform: none !important;
+    }
+  }
 </style>
 """
 

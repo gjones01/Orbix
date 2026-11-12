@@ -2,8 +2,15 @@
 
 Choose satellite groups in the sidebar. Drag the globe to rotate it, scroll to zoom,
 hover to identify a satellite, and click to select it and see its orbit trail.
-Use the playback controls to move through the selected time window. **Reload scene**
+Playback starts automatically when the globe first appears. Use **Pause** to stop
+it, or the playback controls to move through the selected time window. **Reload scene**
 starts a new snapshot. Saved-data mode lets you explore without downloading orbital data.
+
+Earth's day and night sides follow the playback time. Rotate the view to find the
+Sun in the starfield; Earth can block it from view. Satellite markers remain bright
+on the night side so you can explore them. A faint fill light keeps Earth's surface
+readable at night; the Sun's glow and starburst are stylized. Lighting is an approximate visualization,
+not a prediction of whether an individual satellite is in Earth's shadow.
 
 ## Compare and investigate
 

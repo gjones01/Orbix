@@ -652,13 +652,19 @@ def read_manifest(root: Path) -> list[SnapshotRecord]:
         return []
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, UnicodeError) as exc:
         logger.warning("Could not read snapshot manifest %s: %s", path, exc)
         return []
 
     entries = payload.get("snapshots", []) if isinstance(payload, dict) else []
+    if not isinstance(entries, list):
+        logger.warning("Ignoring malformed snapshot manifest list in %s", path)
+        return []
     records: list[SnapshotRecord] = []
     for entry in entries:
+        if not isinstance(entry, dict):
+            logger.warning("Ignoring non-object snapshot manifest entry")
+            continue
         try:
             records.append(SnapshotRecord.from_dict(entry))
         except (KeyError, TypeError, ValueError, CelestrakFormatError) as exc:
@@ -702,7 +708,7 @@ def _scan_snapshot_dir(root: Path, cache_key: str) -> list[SnapshotRecord]:
         try:
             raw = file_path.read_bytes()
             elements, _ = parse_gp_payload(json.loads(raw), strict=False)
-        except (OSError, json.JSONDecodeError, CelestrakError) as exc:
+        except (OSError, json.JSONDecodeError, UnicodeError, CelestrakError) as exc:
             logger.warning("Ignoring unreadable snapshot %s: %s", file_path, exc)
             continue
         records.append(
@@ -861,6 +867,8 @@ class CelestrakClient:
                 notes=("Offline mode: network access disabled.",),
             )
             if result is None:
+                result = self._recover_snapshot(cache_key, strict=strict)
+            if result is None:
                 raise CelestrakNoDataAvailable(
                     f"Offline mode is enabled and snapshot '{cached.filename}' is unreadable"
                 )
@@ -926,7 +934,17 @@ class CelestrakClient:
             return None
         return self._try_snapshot(
             cached, source="snapshot", strict=strict, notes=(note,)
-        )
+        ) or self._recover_snapshot(cached.cache_key, strict=strict)
+
+    def _recover_snapshot(self, cache_key: str, *, strict: bool) -> GpFetchResult | None:
+        """A damaged indexed file must not hide usable older saved data."""
+        for record in sorted(_scan_snapshot_dir(self.snapshot_dir, cache_key),
+                             key=lambda rec: rec.retrieved_at, reverse=True):
+            result = self._try_snapshot(record, source="snapshot", strict=strict,
+                                        notes=("Recovered saved data after an unreadable snapshot.",))
+            if result is not None:
+                return result
+        return None
 
     # -- snapshot access --------------------------------------------------- #
 
@@ -1036,7 +1054,7 @@ class CelestrakClient:
             elements, warnings = parse_gp_payload(
                 json.loads(path.read_bytes()), strict=strict
             )
-        except (OSError, json.JSONDecodeError, CelestrakError) as exc:
+        except (OSError, json.JSONDecodeError, UnicodeError, CelestrakError) as exc:
             logger.warning("Snapshot %s is unusable: %s", path, exc)
             return None
         return GpFetchResult(
@@ -1127,7 +1145,7 @@ def load_snapshot(
         ) from exc
     try:
         payload = json.loads(raw)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, UnicodeError) as exc:
         raise CelestrakFormatError(
             f"Snapshot {file_path} is not valid JSON: {exc}"
         ) from exc
