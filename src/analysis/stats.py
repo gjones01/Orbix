@@ -1,11 +1,4 @@
-"""Descriptive statistics, missing-data audit, robust outliers and correlation analysis.
-
-Everything here is pure pandas/numpy and free of Streamlit, so it can be reviewed and
-tested without a running app. These functions return plain DataFrames; the Plotly figures
-built on them live in :mod:`src.analysis.figures`.
-
-Statistical choices, and why
-----------------------------
+"""
 **Medians and quartiles, not just means.** Orbital element distributions are heavy tailed
 and strongly multi-modal (a constellation is a set of discrete shells), so a mean
 describes almost nothing on its own and a standard deviation assumes a symmetry the data

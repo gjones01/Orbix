@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><style>
+html,body{margin:0;background:transparent;overflow:hidden;height:94px}
+svg{position:absolute;right:18px;bottom:0;width:158px;height:94px;pointer-events:none}
+.bob{animation:bob 3.6s ease-in-out infinite;animation-play-state:paused}
+.peek{animation:peek 12s ease-in-out infinite;animation-play-state:paused}
+.active .bob,.active .peek{animation-play-state:running}
+.eye circle{transform-box:fill-box;transform-origin:center;transition:transform 160ms ease,fill 160ms ease}
+[data-expression="focused"] .eye circle{transform:scaleY(.42);fill:#81d6ff}
+[data-expression="excited"] .eye circle{transform:scale(1.22);fill:#effbff}
+[data-expression="focused"] .bob,[data-expression="focused"] .peek{animation-play-state:paused}
+@keyframes bob{0%,100%{transform:translateY(8px)}50%{transform:translateY(4px)}}
+@keyframes peek{0%,30%,65%,100%{transform:translateY(0)}42%,50%{transform:translateY(15px)}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media(max-width:500px){svg{right:8px;width:132px}}
+</style></head><body>
+<svg id="robot" viewBox="0 0 168 100" role="img" aria-label="Orbix robot companion">
+ <defs><linearGradient id="shell" x2="0" y2="1"><stop stop-color="#263e54"/><stop offset="1" stop-color="#102131"/></linearGradient></defs>
+ <g class="peek"><g class="bob">
+ <path d="M82 22V12" stroke="#83bfe8" stroke-width="3"/><circle cx="82" cy="9" r="4" fill="#58b6ff"/>
+ <path d="M49 92v-9q0-14 16-14h32q16 0 16 14v9" fill="url(#shell)" stroke="#517c9b" stroke-width="1.5"/>
+ <rect x="35" y="37" width="10" height="22" rx="5" fill="#315873"/>
+ <rect x="119" y="37" width="10" height="22" rx="5" fill="#315873"/>
+ <rect x="43" y="22" width="78" height="55" rx="18" fill="url(#shell)" stroke="#77b9e8" stroke-width="1.5"/>
+ <rect x="50" y="33" width="64" height="30" rx="12" fill="#060f19"/>
+ <g class="eye"><circle cx="67" cy="47" r="7.5" fill="#aee5ff"/></g>
+ <g class="eye"><circle cx="97" cy="47" r="7.5" fill="#aee5ff"/></g>
+ <path d="M76 67q6 5 12 0" fill="none" stroke="#8ed3ff" stroke-width="2" stroke-linecap="round"/>
+ </g></g>
+ <rect x="49" y="88" width="21" height="11" rx="5" fill="#23455e" stroke="#8ac7ed"/>
+ <rect x="93" y="88" width="21" height="11" rx="5" fill="#23455e" stroke="#8ac7ed"/>
+</svg>
+<script>
+(() => {
+ const robot=document.getElementById('robot'), eyes=[...document.querySelectorAll('.eye')];
+ const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+ const lifetime=new AbortController(), options={passive:true,signal:lifetime.signal};
+ let host=window, frame=null, visible=false, pending=0, pointer=null, observer;
+ try { if(window.parent.document && window.frameElement){host=window.parent;frame=window.frameElement;} } catch (_) {}
+ let expressionTimer=0;
+ const promptSelector='.st-key-analyst_question input';
+ function express(value){
+   clearTimeout(expressionTimer);
+   robot.dataset.expression=value;
+   if(value==='excited')expressionTimer=setTimeout(()=>{robot.dataset.expression='idle';},2200);
+ }
+ function celebrate(){
+   const input=host.document.querySelector(promptSelector);
+   const form=input?.closest('[data-testid="stForm"]');
+   const submit=form?.querySelector('button');
+   if(input && !input.disabled && input.value.trim() && submit && !submit.disabled)express('excited');
+ }
+ // Observe native form events only; Streamlit remains responsible for submission.
+ host.document.addEventListener('input',e=>{
+   if(e.target.matches?.(promptSelector))express(e.target.value.trim()?'focused':'idle');
+ },options);
+ host.document.addEventListener('focusout',e=>{
+   if(e.target.matches?.(promptSelector) && robot.dataset.expression!=='excited')express('idle');
+ },options);
+ host.document.addEventListener('keydown',e=>{
+   if(e.target.matches?.(promptSelector) && e.key==='Enter' && !e.isComposing && e.keyCode!==229 && !e.repeat)celebrate();
+ },{...options,capture:true});
+ host.document.addEventListener('click',e=>{
+   const button=e.target.closest?.('[data-testid="stForm"] button');
+   if(button?.closest('[data-testid="stForm"]')?.querySelector(promptSelector))celebrate();
+ },{...options,capture:true});
+ function reset(){eyes.forEach(p=>p.removeAttribute('transform'));}
+ function draw(){
+   pending=0;
+   if(!visible || reduced.matches || document.hidden || !pointer){reset();return;}
+   const bounds=robot.getBoundingClientRect(), outer=frame?frame.getBoundingClientRect():{left:0,top:0};
+   const x=pointer.x-outer.left-bounds.left-bounds.width*.49;
+   const y=pointer.y-outer.top-bounds.top-bounds.height*.47;
+   const angle=Math.atan2(y,x), distance=Math.min(1,Math.hypot(x,y)/140);
+   eyes.forEach(p=>p.setAttribute('transform',`translate(${Math.cos(angle)*2.5*distance} ${Math.sin(angle)*2*distance})`));
+ }
+ function schedule(){if(!pending && visible)pending=requestAnimationFrame(draw);}
+ function sync(){
+   if(!visible || reduced.matches || document.hidden){cancelAnimationFrame(pending);pending=0;reset();robot.classList.remove('active');}
+   else {robot.classList.add('active');schedule();}
+   robot.dataset.visible=String(visible);
+ }
+ host.document.addEventListener('pointermove',e=>{pointer={x:e.clientX,y:e.clientY};schedule();},options);
+ if(frame) document.addEventListener('pointermove',e=>{const r=frame.getBoundingClientRect();pointer={x:e.clientX+r.left,y:e.clientY+r.top};schedule();},options);
+ host.addEventListener('scroll',schedule,{...options,capture:true});
+ host.addEventListener('resize',schedule,options);
+ document.addEventListener('visibilitychange',sync,options);
+ reduced.addEventListener('change',sync,{signal:lifetime.signal});
+ observer=new host.IntersectionObserver(entries=>{visible=entries[0].isIntersecting;sync();},{threshold:.1});
+ observer.observe(frame || robot);
+ window.addEventListener('pagehide',()=>{lifetime.abort();observer.disconnect();cancelAnimationFrame(pending);clearTimeout(expressionTimer);},{once:true});
+})();
+</script></body></html>

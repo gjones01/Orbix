@@ -91,6 +91,25 @@ def main():
 
             click(wait.until(lambda d: d.find_element(By.XPATH, "//button[@role='tab' and normalize-space(.)='Analysis']")))
             wait.until(lambda d: button("analyst_patterns").is_enabled())
+            robot_frame = driver.find_element(By.CSS_SELECTOR, '.st-key-analyst_robot iframe')
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", robot_frame)
+            def robot_value(expression):
+                current = driver.find_element(By.CSS_SELECTOR, '.st-key-analyst_robot iframe')
+                return driver.execute_script('const d=arguments[0].contentDocument; return '+expression, current)
+            wait.until(lambda d: robot_value("d.getElementById('robot').dataset.visible==='true'"))
+            assert robot_value("d.defaultView.getComputedStyle(d.querySelector('.bob')).animationPlayState==='running'")
+            assert robot_value("d.querySelectorAll('.eye circle').length===2 && !d.querySelector('.hand')")
+            driver.execute_script("document.dispatchEvent(new PointerEvent('pointermove',{clientX:20,clientY:100}));")
+            wait.until(lambda d: robot_value("d.querySelector('.eye').hasAttribute('transform')"))
+            left_look = robot_value("d.querySelector('.eye').getAttribute('transform')")
+            driver.execute_script("document.dispatchEvent(new PointerEvent('pointermove',{clientX:innerWidth-10,clientY:innerHeight-20}));")
+            wait.until(lambda d: robot_value("d.querySelector('.eye').getAttribute('transform')") != left_look)
+            driver.save_screenshot(str(ROOT / 'docs/screenshots/analyst-robot.png'))
+            assert not calls
+            driver.execute_cdp_cmd('Emulation.setEmulatedMedia', {'features':[{'name':'prefers-reduced-motion','value':'reduce'}]})
+            wait.until(lambda d: not robot_value("d.querySelector('.eye').hasAttribute('transform')"))
+            assert robot_value("d.defaultView.getComputedStyle(d.querySelector('.bob')).animationName==='none'")
+            driver.execute_cdp_cmd('Emulation.setEmulatedMedia', {'features':[{'name':'prefers-reduced-motion','value':'no-preference'}]})
             # Explicitly disable the default-on group to exercise missing-data recovery.
             click(driver.find_element(By.XPATH, "//label[contains(., 'Starlink')]"))
             wait.until(lambda d: d.find_element(By.CSS_SELECTOR, ".st-key-group_starlink input").is_selected() is False)
@@ -99,7 +118,11 @@ def main():
             question = "Why are the starlink satellites so much lower altitude than the others?"
             field = wait.until(lambda d: d.find_element(By.CSS_SELECTOR, ".st-key-analyst_question input"))
             field.send_keys(question)
-            click(driver.find_element(By.XPATH, "//button[normalize-space(.)='Ask Orbix']"))
+            wait.until(lambda d: robot_value("d.getElementById('robot').dataset.expression==='focused'"))
+            assert len(calls) == 0
+            from selenium.webdriver.common.keys import Keys
+            field.send_keys(Keys.ENTER)
+            wait.until(lambda d: robot_value("d.getElementById('robot').dataset.expression==='excited'"))
             wait.until(lambda d: "Starlink data is not loaded" in d.find_element(By.TAG_NAME, "body").text)
             assert len(calls) == 1
             click(button("analyst_load_starlink"))
@@ -108,6 +131,7 @@ def main():
             assert driver.find_element(By.CSS_SELECTOR, ".st-key-analyst_question input").get_attribute("value") == question
             assert len(calls) == 1
             click(driver.find_element(By.XPATH, "//button[normalize-space(.)='Ask Orbix']"))
+            wait.until(lambda d: robot_value("d.getElementById('robot').dataset.expression==='excited'"))
             wait.until(lambda d: "Browser verification: loaded population" in d.find_element(By.TAG_NAME, "body").text)
             assert len(calls) == 2
             assert calls[1]["total_satellites"] > 10000

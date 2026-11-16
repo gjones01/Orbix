@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 import streamlit as st
 import pandas as pd
+import streamlit.components.v1 as components
 
 from src.analyst import context as grounding, conversation, provider
 
@@ -58,6 +60,10 @@ def render_analyst(frame, groups: list[str], scene=None) -> None:
             question = suggestion
     if st.button("Find interesting patterns", key="analyst_patterns", disabled=not enabled or not groups):
         question = "Find interesting patterns in the selected data. Give 3–5 evidence-based findings with numerical evidence and caveats."
+    # Browser-only decoration: no component events or provider requests.
+    with st.container(key="analyst_robot"):
+        st.markdown('<style>.st-key-analyst_robot{margin-bottom:-1rem}</style>', unsafe_allow_html=True)
+        components.html((Path(__file__).resolve().parents[2] / "components" / "analyst_robot.html").read_text(encoding="utf-8"), height=94, scrolling=False)
     with st.form("analyst_question_form", clear_on_submit=False):
         entered = st.text_input("Your question", key="analyst_question", max_chars=grounding.MAX_QUESTION,
                                 placeholder="Compare groups, ask about an outlier, or enter a NORAD ID…",
