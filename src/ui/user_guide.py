@@ -22,7 +22,7 @@ def render_user_guide(scene, payload_bytes: int) -> None:
     with st.expander("AI answer evidence & request details"):
         turns = st.session_state.get("orbix_analyst", {}).get("turns", [])
         if not turns:
-            st.caption("Ask a question in Analysis to inspect its supporting evidence here.")
+            st.caption("Ask a question beside the Globe to inspect its supporting evidence here.")
         for turn in turns:
             st.text(turn["question"])
             st.json(turn["context"])

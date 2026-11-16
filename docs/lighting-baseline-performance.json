@@ -1,0 +1,58 @@
+{
+  "stage": "baseline",
+  "satellites": 11959,
+  "renderer": "Chrome SwiftShader software rendering",
+  "samples": {
+    "day": [
+      {
+        "calls": 5,
+        "fps": 42.567342867994505
+      },
+      {
+        "calls": 5,
+        "fps": 45.17972227758952
+      }
+    ],
+    "night": [
+      {
+        "calls": 5,
+        "fps": 44.1283013897122
+      },
+      {
+        "calls": 5,
+        "fps": 40.488517192307626
+      }
+    ],
+    "terminator": [
+      {
+        "calls": 5,
+        "fps": 42.57270107447444
+      },
+      {
+        "calls": 5,
+        "fps": 44.627989076488426
+      }
+    ],
+    "follow": [
+      {
+        "calls": 7,
+        "fps": 32.15223097213459
+      },
+      {
+        "calls": 7,
+        "fps": 31.78928247048135
+      }
+    ],
+    "perspective": [
+      {
+        "calls": 7,
+        "fps": 34.43252549358394
+      },
+      {
+        "calls": 7,
+        "fps": 34.047011065810054
+      }
+    ]
+  },
+  "console_errors": 0
+}

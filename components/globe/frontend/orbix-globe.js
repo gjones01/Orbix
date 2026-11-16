@@ -18,6 +18,8 @@ import * as THREE from './vendor/three.module.min.js';
 import { createMotion } from './motion.js';
 import { createStarfield } from './starfield.js';
 import { createSunlight } from './sunlight.js';
+import { createTracking } from './tracking.js';
+import { createEarthEffects } from './earth-effects.js';
 
 (function () {
   'use strict';
@@ -98,6 +100,8 @@ import { createSunlight } from './sunlight.js';
   };
 
   let layer = null;
+  let tracking = null;
+  let earthEffects = null;
 
   // ------------------------------------------------------------------ //
   // 4. Satellite layer: one batched Points geometry for the whole catalogue
@@ -351,9 +355,9 @@ import { createSunlight } from './sunlight.js';
          (document.getElementById('globe'));
 
     const material = globe.globeMaterial();
-    material.shininess = 9;
-    material.specular.setRGB(0.045, 0.045, 0.045);
-    material.bumpScale = 0.28;
+    material.shininess = 28;
+    material.specular.setRGB(0.012, 0.012, 0.012);
+    material.bumpScale = 0.08;
 
     const controls = globe.controls();
     controls.enableDamping = true;
@@ -370,7 +374,9 @@ import { createSunlight } from './sunlight.js';
     stars.material.uniforms.pixelRatio.value = globe.renderer().getPixelRatio();
     globe.scene().add(stars);
     sunlight = createSunlight(globe);
+    earthEffects = createEarthEffects(globe, sunlight.direction);
     state.radius = globe.getGlobeRadius();
+    tracking = createTracking(globe, state, () => layer);
     return globe;
   }
 
@@ -420,6 +426,7 @@ import { createSunlight } from './sunlight.js';
       if (state.tNorm >= 1) state.tNorm = 0;    // loop the bounded window
       redraw();
     }
+    if (tracking) tracking.update(dt);
     updateSelectionMarker(); // Also follows camera drags while playback is paused.
     // fps counter
     state.frameStats.frames += 1;
@@ -566,6 +573,7 @@ import { createSunlight } from './sunlight.js';
   function applyAnalysisAction(action) {
     if (!action || action.revision === state.lastAnalysisAction) return;
     state.lastAnalysisAction = action.revision;
+    if (tracking) tracking.returnEarth(true);
     const wanted = new Set((action.ids || []).map(Number));
     const indices = [];
     state.metadata.forEach((meta, i) => {
@@ -614,6 +622,7 @@ import { createSunlight } from './sunlight.js';
   function applyScene(payload) {
     const sceneChanged = payload.scene_id !== state.sceneId || !layer;
     if (sceneChanged) {
+      if (tracking) tracking.returnEarth(true);
       rebuildLayer(payload);
       state.sceneId = payload.scene_id;
     }
@@ -888,6 +897,8 @@ import { createSunlight } from './sunlight.js';
   // Debug handle for the browser smoke test and the developer console.
   window.__orbix = {
     motion: motion,
+    get tracking() { return tracking; },
+    get earthEffects() { return earthEffects; },
     state: state,
     get layer() { return layer; },
     get metadata() { return state.metadata; },

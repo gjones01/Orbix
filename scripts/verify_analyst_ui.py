@@ -15,6 +15,7 @@ import tempfile
 import threading
 import time
 
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -80,7 +81,7 @@ def main():
             options.set_capability("goog:loggingPrefs", {"browser": "ALL"})
             driver = webdriver.Chrome(options=options)
             driver.get("http://localhost:8525")
-            wait = WebDriverWait(driver, 45)
+            wait = WebDriverWait(driver, 45, ignored_exceptions=(StaleElementReferenceException,))
 
             def click(element):
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", element)
@@ -89,7 +90,10 @@ def main():
             def button(key):
                 return wait.until(lambda d: d.find_element(By.CSS_SELECTOR, f".st-key-{key} button"))
 
-            click(wait.until(lambda d: d.find_element(By.XPATH, "//button[@role='tab' and normalize-space(.)='Analysis']")))
+            def tab(name):
+                click(wait.until(lambda d: d.find_element(By.XPATH, f"//button[@role='tab' and normalize-space(.)='{name}']")))
+            tab("Globe")
+            click(wait.until(lambda d: d.find_element(By.XPATH, "//summary[contains(., 'Conversation tools & ideas')]")))
             wait.until(lambda d: button("analyst_patterns").is_enabled())
             robot_frame = driver.find_element(By.CSS_SELECTOR, '.st-key-analyst_robot iframe')
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", robot_frame)
@@ -105,15 +109,25 @@ def main():
             driver.execute_script("document.dispatchEvent(new PointerEvent('pointermove',{clientX:innerWidth-10,clientY:innerHeight-20}));")
             wait.until(lambda d: robot_value("d.querySelector('.eye').getAttribute('transform')") != left_look)
             driver.save_screenshot(str(ROOT / 'docs/screenshots/analyst-robot.png'))
+            driver.execute_script("document.querySelector('.st-key-mission_chat details').open=false; document.querySelector('.st-key-mission_chat').scrollTop=0")
+            driver.save_screenshot(str(ROOT / 'docs/screenshots/mission-workspace.png'))
+            driver.set_window_size(1000, 1000)
+            time.sleep(.5)
+            panel = driver.find_element(By.CSS_SELECTOR, '.st-key-mission_chat')
+            assert panel.rect['width'] > 400, panel.rect
+            assert driver.execute_script('return document.documentElement.scrollWidth <= innerWidth')
+            driver.save_screenshot(str(ROOT / 'docs/screenshots/mission-workspace-1000.png'))
+            driver.set_window_size(1600, 1000)
             assert not calls
             driver.execute_cdp_cmd('Emulation.setEmulatedMedia', {'features':[{'name':'prefers-reduced-motion','value':'reduce'}]})
             wait.until(lambda d: not robot_value("d.querySelector('.eye').hasAttribute('transform')"))
             assert robot_value("d.defaultView.getComputedStyle(d.querySelector('.bob')).animationName==='none'")
             driver.execute_cdp_cmd('Emulation.setEmulatedMedia', {'features':[{'name':'prefers-reduced-motion','value':'no-preference'}]})
             # Explicitly disable the default-on group to exercise missing-data recovery.
+            click(driver.find_element(By.XPATH, "//summary[contains(., 'Data sources')]"))
             click(driver.find_element(By.XPATH, "//label[contains(., 'Starlink')]"))
             wait.until(lambda d: d.find_element(By.CSS_SELECTOR, ".st-key-group_starlink input").is_selected() is False)
-            wait.until(lambda d: "Which selected group" in button("analyst_suggest_0").text)
+            wait.until(lambda d: "Which selected group" in button("analyst_suggest_0").get_attribute("textContent"))
             assert len(calls) == 0
             question = "Why are the starlink satellites so much lower altitude than the others?"
             field = wait.until(lambda d: d.find_element(By.CSS_SELECTOR, ".st-key-analyst_question input"))
@@ -139,7 +153,9 @@ def main():
             assert sum(row["n"] for row in calls[1]["evidence"]["population"]) == calls[1]["total_satellites"]
             assert "altitude_flags" in calls[1]["evidence"]
             # A normal unrelated rerun must retain the answer and make no provider call.
+            tab("Analysis")
             click(driver.find_element(By.XPATH, "//label[normalize-space(.)='mi']"))
+            tab("Globe")
             wait.until(lambda d: button("analyst_patterns").is_enabled())
             time.sleep(1)
             assert len(calls) == 2
@@ -152,14 +168,17 @@ def main():
             assert calls[-1]["evidence"]["satellites"][0]["norad_id"] == 25544
             assert calls[-1]["evidence"]["raw_api_records"]["records"][0]["norad_id"] == 25544
             # The existing globe selection still works after conversation reruns.
+            tab("Analysis")
             click(button("analysis_farthest_view"))
             wait.until(lambda d: "is selected. Open the Globe" in d.find_element(By.TAG_NAME, "body").text)
             assert len(calls) == 3
+            tab("Globe")
             title = driver.find_element(By.XPATH, "//h3[normalize-space(.)='Ask Orbix']")
             driver.execute_script("arguments[0].scrollIntoView({block:'start'});", title)
             driver.save_screenshot(str(ROOT / "docs/screenshots/ask-orbix-mock.png"))
             driver.set_window_size(1366, 1000)
             driver.save_screenshot(str(ROOT / "docs/screenshots/ask-orbix-mock-1366.png"))
+            driver.execute_script("document.querySelector('.st-key-mission_chat details').open=true")
             click(button("analyst_clear"))
             wait.until(lambda d: not d.find_elements(By.CSS_SELECTOR, "[data-testid='stChatMessage']"))
             assert len(calls) == 3

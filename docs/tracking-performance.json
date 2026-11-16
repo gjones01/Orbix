@@ -1,0 +1,33 @@
+{
+  "satellites": 11959,
+  "earth": [
+    {
+      "fps": 15.9,
+      "updateMs": 2.75
+    },
+    {
+      "fps": 23.9,
+      "updateMs": 2.75
+    },
+    {
+      "fps": 23.9,
+      "updateMs": 2.75
+    }
+  ],
+  "follow": [
+    {
+      "fps": 20.7,
+      "updateMs": 2.75
+    },
+    {
+      "fps": 21.5,
+      "updateMs": 2.75
+    },
+    {
+      "fps": 19.4,
+      "updateMs": 2.75
+    }
+  ],
+  "console_errors": 0,
+  "renderer": "headless Chrome SwiftShader; paused matched satellite, three 1.2s samples"
+}

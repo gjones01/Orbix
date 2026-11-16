@@ -27,10 +27,11 @@ def _load_group(group: str) -> None:
     st.session_state[f"group_{group}"] = True
 
 
-def render_analyst(frame, groups: list[str], scene=None) -> None:
+def render_analyst(frame, groups: list[str], scene=None, *, compact=False) -> None:
     st.subheader("Ask Orbix")
-    st.write("Explore your satellite data with AI. Ask questions, investigate patterns, "
-             "and understand what's happening above Earth.")
+    if not compact:
+        st.write("Explore your satellite data with AI. Ask questions, investigate patterns, "
+                 "and understand what's happening above Earth.")
     state = st.session_state.setdefault("orbix_analyst", {})
     if conversation.sync(state, snapshot_id(frame)):
         st.session_state["orbix_analyst_reset_notice"] = True
@@ -46,20 +47,21 @@ def render_analyst(frame, groups: list[str], scene=None) -> None:
         st.info(str(exc))
         enabled = False
     st.caption("Questions and relevant satellite data are sent to the configured AI provider.")
-    if st.button("Clear conversation", key="analyst_clear", disabled=not state["turns"] and "error" not in state):
-        state.update(turns=[], last_submission=None)
-        state.pop("error", None)
-        state.pop("missing_groups", None)
-        state.pop("data_notice", None)
-        st.session_state.pop("orbix_analyst_reset_notice", None)
     question = None
-    choices = grounding.suggestions(groups)
-    cols = st.columns(len(choices))
-    for i, suggestion in enumerate(choices):
-        if cols[i].button(suggestion, key=f"analyst_suggest_{i}", disabled=not enabled or not groups):
-            question = suggestion
-    if st.button("Find interesting patterns", key="analyst_patterns", disabled=not enabled or not groups):
-        question = "Find interesting patterns in the selected data. Give 3–5 evidence-based findings with numerical evidence and caveats."
+    with st.expander("Conversation tools & ideas", expanded=not compact):
+        if st.button("Clear conversation", key="analyst_clear", disabled=not state["turns"] and "error" not in state):
+            state.update(turns=[], last_submission=None)
+            state.pop("error", None)
+            state.pop("missing_groups", None)
+            state.pop("data_notice", None)
+            st.session_state.pop("orbix_analyst_reset_notice", None)
+        choices = grounding.suggestions(groups)
+        cols = [st] * len(choices) if compact else st.columns(len(choices))
+        for i, suggestion in enumerate(choices):
+            if cols[i].button(suggestion, key=f"analyst_suggest_{i}", disabled=not enabled or not groups):
+                question = suggestion
+        if st.button("Find interesting patterns", key="analyst_patterns", disabled=not enabled or not groups):
+            question = "Find interesting patterns in the selected data. Give 3–5 evidence-based findings with numerical evidence and caveats."
     # Browser-only decoration: no component events or provider requests.
     with st.container(key="analyst_robot"):
         st.markdown('<style>.st-key-analyst_robot{margin-bottom:-1rem}</style>', unsafe_allow_html=True)
@@ -86,7 +88,7 @@ def render_analyst(frame, groups: list[str], scene=None) -> None:
                     state["missing_groups"] = evidence["unavailable_groups"]
                     names = ", ".join(grounding.LABELS.get(g, g) for g in evidence["unavailable_groups"])
                     state["data_notice"] = (f"{names} data is not loaded in this snapshot. "
-                                      "Load the missing group below or enable it under Constellations to load "
+                                      "Load the missing group below or enable it under Data sources "
                                       "in the sidebar for its numerical results. The analyst can still explain "
                                       "the concepts and use the available data.")
                 elif not evidence["total_satellites"]:

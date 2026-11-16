@@ -1,0 +1,38 @@
+{
+  "stage": "sunlight",
+  "satellites": 11959,
+  "renderer": "Chrome SwiftShader software rendering",
+  "samples": {
+    "day": [
+      {
+        "calls": 5,
+        "fps": 39.14024147476904
+      },
+      {
+        "calls": 5,
+        "fps": 37.633698666018354
+      }
+    ],
+    "night": [
+      {
+        "calls": 5,
+        "fps": 39.70354684924571
+      },
+      {
+        "calls": 5,
+        "fps": 42.743473400072595
+      }
+    ],
+    "terminator": [
+      {
+        "calls": 5,
+        "fps": 41.991601679664086
+      },
+      {
+        "calls": 5,
+        "fps": 42.607016842410076
+      }
+    ]
+  },
+  "console_errors": 0
+}

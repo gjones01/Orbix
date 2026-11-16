@@ -312,7 +312,7 @@ html, body {
   gap: 10px;
 }
 
-.playback-row button {
+.playback-row button, #panel-tracking button {
   font-family: var(--mono);
   font-size: 10.5px;
   letter-spacing: 0.06em;
@@ -325,7 +325,7 @@ html, body {
   white-space: nowrap;
 }
 
-.playback-row button:hover { background: rgba(88, 182, 255, 0.22); }
+.playback-row button:hover, #panel-tracking button:hover { background: rgba(88, 182, 255, 0.22); }
 .playback-row button.active {
   background: rgba(110, 231, 183, 0.16);
   border-color: rgba(110, 231, 183, 0.45);
@@ -432,3 +432,45 @@ button:focus-visible, select:focus-visible, input:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Glass instrument panels retain contrast over both Earth and black space. */
+.hud-panel {
+  background: linear-gradient(135deg,rgba(113,165,194,.16),rgba(7,14,22,.8) 65%);
+  border-color: rgba(181,218,239,.25); border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12),0 8px 30px #0005;
+  backdrop-filter: blur(16px) saturate(120%);
+}
+.hud-heading { color: #bbd4e5; letter-spacing: .22em; }
+.filter-row { padding: 4px 2px; border-bottom: 1px solid #c9e7ff09; }
+#hud-title { letter-spacing: .22em; }
+/* Loading-only wireframe instrument. No extra WebGL draw calls. */
+.spinner { width: 150px; height: 150px; border: 0; border-radius: 0; animation: none; position: relative; }
+.spinner::before, .spinner::after { content: ""; position: absolute; inset: 0; }
+.spinner::before {
+  border: 1px solid #bfeaff77; border-radius: 50%;
+  background: repeating-linear-gradient(0deg,transparent 0 22px,#a7dcff33 23px 24px),repeating-linear-gradient(90deg,transparent 0 22px,#a7dcff33 23px 24px);
+  transform: rotate(-25deg) scaleY(.78); box-shadow: 0 0 35px #8acfff19;
+  animation: grid-breathe 3s ease-in-out infinite;
+}
+.spinner::after {
+  background: radial-gradient(circle at 24% 28%,#fff 0 1px,transparent 3px),radial-gradient(circle at 72% 70%,#d3f4ff 0 2px,transparent 4px),radial-gradient(circle at 80% 22%,#fff 0 1px,transparent 3px),radial-gradient(circle at 15% 72%,#d3f4ff 0 1px,transparent 3px);
+  animation: grid-spark 1.8s ease-in-out infinite alternate;
+}
+#status.hidden .spinner::before, #status.hidden .spinner::after { animation: none; }
+@keyframes grid-breathe { 50% { transform: rotate(-15deg) scaleY(.9); opacity: .5; } }
+@keyframes grid-spark { from { opacity: .2; transform: scale(.95); } to { opacity: 1; transform: scale(1.05); } }
+@media(prefers-reduced-motion:reduce) { .spinner::before,.spinner::after { animation:none; } }
+
+/* Optional camera controls stay separate from the playback timeline. */
+#panel-tracking { left:16px; right:16px; bottom:112px; min-width:0; width:fit-content; max-width:calc(100% - 32px); }
+#panel-tracking[hidden], #panel-tracking [hidden] { display:none; }
+.tracking-actions { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.tracking-actions label { display:flex; align-items:center; gap:6px; font-size:10px; }
+#tracking-distance { width:80px; accent-color:var(--accent); }
+#tracking-note { margin-top:6px; color:#b0c6d7; font-size:10px; max-width:420px; }
+#panel-tracking button[aria-pressed="true"] { border-color:#8cdbff; background:#22536c99; }
+#panel-tracking button:focus-visible { outline:2px solid #b6eaff; outline-offset:2px; }
+#panel-tracking button:disabled { opacity:.45; cursor:default; }
+
+#lighting-control { position:absolute;right:16px;top:12px;z-index:7;font:10px var(--mono);color:#a9bed1; }
+#lighting-quality { color:#dbe6f2;background:#0b1621;border:1px solid #8acfff44;border-radius:6px;padding:3px 5px;font:10px var(--mono); }

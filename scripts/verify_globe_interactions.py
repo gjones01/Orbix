@@ -75,7 +75,8 @@ def main():
             difference = ImageChops.difference(hidden_groups,removed_layer)
             # Canvas element screenshots include overlapping HTML HUD counters.
             # Compare the globe region, excluding the independently updating FPS.
-            difference = difference.crop((0,int(difference.height*.25),difference.width,int(difference.height*.80)))
+            hud_bottom = driver.execute_script("return document.getElementById('panel-groups').getBoundingClientRect().bottom-document.querySelector('canvas').getBoundingClientRect().top")
+            difference = difference.crop((0,max(int(hud_bottom)+4,int(difference.height*.25)),difference.width,int(difference.height*.80)))
             changed = sum(max(pixel)>8 for pixel in difference.getdata())
             assert changed < 10, f'Hidden satellite groups still render: {changed} pixels'
             driver.execute_script('window.__orbix.layer.points.visible=true;window.__orbix.layer.visible.set(window.savedVisibility);window.__orbix.setTime(0);window.__orbix.state.globe.resumeAnimation()')

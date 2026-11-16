@@ -26,7 +26,7 @@ export function createSunlight(globe) {
   const light = new THREE.DirectionalLight(0xffffff, 3);
   light.name = 'orbix-sunlight';
   // Low neutral fill keeps geography readable without flattening day/night contrast.
-  const fill = new THREE.AmbientLight(0xffffff, 0.3);
+  const fill = new THREE.AmbientLight(0xffffff, 0.12);
   fill.name = 'orbix-night-fill';
   globe.lights([light, fill]);
   const direction = new THREE.Vector3();
@@ -71,6 +71,7 @@ export function createSunlight(globe) {
   globe.scene().add(createLensFlare(direction, globe.getGlobeRadius()));
   let lastTime = null;
   return {
+    direction,
     update(date) {
       if (!date || date.getTime() === lastTime) return;
       lastTime = date.getTime();

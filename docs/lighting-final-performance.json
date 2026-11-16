@@ -1,0 +1,114 @@
+{
+  "stage": "final",
+  "satellites": 11959,
+  "renderer": "Chrome SwiftShader software rendering",
+  "samples": {
+    "cinematic-day": [
+      {
+        "calls": 8,
+        "fps": 31.30828670297569
+      },
+      {
+        "calls": 8,
+        "fps": 32.28995057660626
+      }
+    ],
+    "cinematic-night": [
+      {
+        "calls": 8,
+        "fps": 31.07848971691364
+      },
+      {
+        "calls": 8,
+        "fps": 31.89156866628121
+      }
+    ],
+    "cinematic-terminator": [
+      {
+        "calls": 8,
+        "fps": 31.262471730743616
+      },
+      {
+        "calls": 8,
+        "fps": 32.519246083645456
+      }
+    ],
+    "cinematic-follow": [
+      {
+        "calls": 8,
+        "fps": 27.316943167215936
+      },
+      {
+        "calls": 8,
+        "fps": 28.235603125173572
+      }
+    ],
+    "cinematic-perspective": [
+      {
+        "calls": 8,
+        "fps": 30.86419752989777
+      },
+      {
+        "calls": 8,
+        "fps": 31.06821787316142
+      }
+    ],
+    "basic-day": [
+      {
+        "calls": 7,
+        "fps": 36.576444769278396
+      },
+      {
+        "calls": 7,
+        "fps": 35.75448586260686
+      }
+    ],
+    "basic-night": [
+      {
+        "calls": 7,
+        "fps": 35.99005365789825
+      },
+      {
+        "calls": 7,
+        "fps": 37.02724146963489
+      }
+    ],
+    "basic-terminator": [
+      {
+        "calls": 7,
+        "fps": 35.74028724488442
+      },
+      {
+        "calls": 7,
+        "fps": 37.135278513414555
+      }
+    ],
+    "basic-follow": [
+      {
+        "calls": 7,
+        "fps": 32.75681341616754
+      },
+      {
+        "calls": 7,
+        "fps": 30.14416775790467
+      }
+    ],
+    "basic-perspective": [
+      {
+        "calls": 7,
+        "fps": 35.530990919021924
+      },
+      {
+        "calls": 7,
+        "fps": 35.683605365194836
+      }
+    ]
+  },
+  "surface_luminance": {
+    "day": 77.61590277777778,
+    "night": 24.316319444444446
+  },
+  "laptop_follow_fps": 31.3,
+  "optional_texture_failure": "passed",
+  "console_errors": 0
+}

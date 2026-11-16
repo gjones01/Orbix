@@ -17,6 +17,12 @@
       <span class="hud-sub">Earth-fixed</span>
     </header>
 
+    <label id="lighting-control">Lighting
+      <select id="lighting-quality" aria-label="Earth lighting quality">
+        <option value="cinematic">Cinematic</option><option value="basic">Basic</option>
+      </select>
+    </label>
+
     <!-- Constellation filter (local: no data is re-requested) -->
     <section id="panel-groups" class="hud-panel">
       <div class="hud-heading">Constellations</div>
@@ -32,6 +38,16 @@
       <div class="hud-heading">Selected</div>
       <div id="selected-name">click a satellite</div>
       <div id="selected-meta" class="dim">hover to identify &middot; click to select</div>
+    </section>
+
+    <section id="panel-tracking" class="hud-panel" hidden aria-label="Satellite camera">
+      <div class="tracking-actions">
+        <button id="follow-satellite" type="button" aria-pressed="false">Follow Satellite</button>
+        <button id="satellite-perspective" type="button" aria-pressed="false">Satellite Perspective</button>
+        <button id="return-earth" type="button" hidden>Return to Earth</button>
+        <label hidden>Distance <input id="tracking-distance" type="range" min="8" max="65" value="22" aria-label="Follow camera distance" /></label>
+      </div>
+      <div id="tracking-note" role="status"></div>
     </section>
 
     <!-- Simulation playback (runs entirely in the browser) -->
@@ -60,7 +76,7 @@
     <div id="selection-marker" hidden aria-hidden="true"><i></i><span></span></div>
 
     <div id="hud-attribution">
-      Earth imagery: NASA Blue Marble (public domain) &middot; SGP4 / Skyfield &middot; CelesTrak
+      Earth imagery: NASA Blue Marble / Black Marble 2016 ? Natural Earth &middot; SGP4 / Skyfield &middot; CelesTrak
     </div>
 
     <div id="status" class="status">

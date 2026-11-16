@@ -222,7 +222,6 @@ def _analysis_tab_checks(driver, report: dict, failures: list[str],
         "groups": "Explore satellite groups",
         "altitudes": "How high do satellites orbit?",
         "discoveries": "Interesting discoveries",
-        "analyst": "Ask Orbix",
     }
     found = {key: header in body for key, header in sections.items()}
     report["analysisSections"] = found

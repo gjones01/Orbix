@@ -17,7 +17,6 @@ from src.analysis.frame import GEO_BAND_KM, LEO_APOGEE_KM, column_docs
 from src.api.catalog import GROUP_SPECS
 from src.ui import analysis_cache as cached
 from src.ui.presentation import ConstellationScene
-from src.ui.analyst import render_analyst
 
 __all__ = ["render_analysis"]
 
@@ -565,7 +564,6 @@ def render_analysis(scene: ConstellationScene) -> list[int]:
     if subset.empty:
         st.info("Choose at least one group above to explore its satellites. "
                 "If no groups are available, check the loaded-data report in User guide.")
-        render_analyst(frame, groups, scene)
         return []
     summary = cached.overview(subset)
     _cards(summary, labels, unit)
@@ -580,7 +578,6 @@ def render_analysis(scene: ConstellationScene) -> list[int]:
     _explore(subset, summary, labels, colours, unit)
     _discoveries(subset, summary, labels, unit)
 
-    render_analyst(frame, groups, scene)
 
     return sorted(st.session_state.get(_HIGHLIGHT_KEY) or [])
 

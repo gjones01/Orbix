@@ -308,6 +308,30 @@ _CSS = """
       animation: none !important; transition: none !important; transform: none !important;
     }
   }
+
+  /* Mission glass: readable surfaces, fine luminous edges, quiet typography. */
+  .stApp { font-family: "Segoe UI", "Avenir Next", sans-serif; }
+  h1, h2, h3, .ox-wordmark { font-family: "Bahnschrift", "Avenir Next", sans-serif !important; letter-spacing: .035em; }
+  .ox-wordmark { letter-spacing: .32em; text-shadow: 0 0 22px #8fdcff44; }
+  [data-testid="stSidebar"] { background: linear-gradient(160deg,#101c26ee,#060a11); }
+  [data-testid="stSidebarCollapseButton"], [data-testid="stSidebarCollapsedControl"] { display: flex !important; }
+  .st-key-mission_chat, .ox-card, .ox-analysis-metric, [data-testid="stForm"] {
+    background: linear-gradient(135deg,rgba(158,211,235,.09),rgba(10,19,29,.72) 50%);
+    border: 1px solid rgba(179,221,244,.2); border-radius: 18px;
+    box-shadow: inset 0 1px 0 #ffffff12, 0 12px 36px #00000020;
+  }
+  .st-key-mission_chat { backdrop-filter: blur(16px); padding: 18px; }
+  .st-key-mission_chat h3 { font-size: 1.35rem; }
+  .st-key-mission_chat [data-testid="stChatMessage"] { padding: 12px; background: #b8e4ff08; border-radius: 14px; }
+  .st-key-mission_chat [data-testid="stText"] { white-space: pre-wrap; overflow-wrap: anywhere; }
+  [data-testid="stButton"] button, [data-testid="stFormSubmitButton"] button {
+    background: linear-gradient(135deg,#bbdfff12,#0b1825aa); border-color: #b7ddf333; border-radius: 10px;
+  }
+  [data-testid="stTabs"] [role="tab"] { font-family: var(--ox-mono); letter-spacing: .055em; font-size: .8rem; }
+  @media (max-width: 1100px) {
+    [data-testid="stHorizontalBlock"]:has(.st-key-mission_chat) { flex-wrap: wrap; }
+    [data-testid="stHorizontalBlock"]:has(.st-key-mission_chat) > [data-testid="stColumn"] { width: 100%; flex: 1 1 100%; min-width: 0; }
+  }
 </style>
 """
 

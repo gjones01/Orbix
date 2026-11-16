@@ -515,7 +515,7 @@ changed-file list, verification and the command to reproduce it.
 
 ### Ask Orbix (Phase 3)
 
-The Analysis tab now includes **Ask Orbix**: questions, suggested investigations and
+The Globe tab includes **Ask Orbix** beside the scene: questions, suggested investigations and
 **Find interesting patterns**, grounded in the loaded snapshot and selected groups.
 Python calculates the statistics; a configured OpenAI-compatible model explains them.
 Answers show their snapshot, scope, caveats and expandable computed evidence.

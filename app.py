@@ -21,7 +21,8 @@ import streamlit as st
 
 from components.globe import globe_component
 from src.api.catalog import GROUP_SPECS
-from src.ui import theme
+from src.ui import theme, analysis_cache as cached
+from src.ui.analyst import render_analyst
 from src.ui.loading import (
     clear_scene_cache,
     load_constellation_cached,
@@ -89,17 +90,18 @@ def render_sidebar() -> tuple[tuple[str, ...], float, bool, bool]:
             unsafe_allow_html=True,
         )
 
-        st.markdown("### Satellite groups")
-        defaults = set(default_groups())
-        chosen: list[str] = []
-        for spec in GROUP_SPECS:
-            enabled = st.checkbox(
-                f"{spec.label}",
-                value=spec.id in defaults,
-                key=f"group_{spec.id}",
-            )
-            if enabled:
-                chosen.append(spec.id)
+        with st.expander("Data sources", expanded=False):
+            st.caption("Choose which catalogues to load. Show or hide satellites using Constellations on the globe.")
+            defaults = set(default_groups())
+            chosen: list[str] = []
+            for spec in GROUP_SPECS:
+                enabled = st.checkbox(
+                    f"{spec.label}",
+                    value=spec.id in defaults,
+                    key=f"group_{spec.id}",
+                )
+                if enabled:
+                    chosen.append(spec.id)
 
         st.markdown("### Playback window")
         window_label = st.selectbox(
@@ -138,7 +140,7 @@ def main() -> None:
         st.session_state.pop("orbix_scene_signature", None)
         render_header(None)
         st.markdown(
-            '<div class="ox-notice">Select at least one constellation in the sidebar.'
+            '<div class="ox-notice">Open Data sources in the sidebar and select a constellation.'
             "</div>",
             unsafe_allow_html=True,
         )
@@ -200,29 +202,36 @@ def main() -> None:
         payload_bytes = len(str(payload))
         st.session_state["orbix_scene_signature"] = signature
 
-        event = globe_component(payload, height=GLOBE_HEIGHT, key=COMPONENT_KEY)
-        if (event and event.get("event") == "select"
-                and event != st.session_state.get("orbix_last_event")):
-            norad_id = int(event["norad_id"])
-            # Components retain their last event on unrelated reruns. Consume it once
-            # so an old globe click cannot override a newer Analysis selection.
-            st.session_state["orbix_last_event"] = dict(event)
-            # The payload above carried the *previous* selection, so re-run once with the
-            # new one: that is what brings back the selected satellite's trail. Guarded so
-            # a repeated event cannot loop.
-            if scene.element(norad_id) is not None and st.session_state.get("orbix_selected") != norad_id:
-                st.session_state["orbix_selected"] = norad_id
-                st.rerun()
-            selected = st.session_state["orbix_selected"]
+        mission, assistant = st.columns([3, 1.2], gap="medium")
+        with assistant:
+            chat_panel = st.container(height=GLOBE_HEIGHT, border=True, key="mission_chat")
+        with mission:
+            event = globe_component(payload, height=GLOBE_HEIGHT, key=COMPONENT_KEY)
+            if (event and event.get("event") == "select"
+                    and event != st.session_state.get("orbix_last_event")):
+                norad_id = int(event["norad_id"])
+                # Components retain their last event on unrelated reruns. Consume it once
+                # so an old globe click cannot override a newer Analysis selection.
+                st.session_state["orbix_last_event"] = dict(event)
+                # The payload above carried the *previous* selection, so re-run once with the
+                # new one: that is what brings back the selected satellite's trail. Guarded so
+                # a repeated event cannot loop.
+                if scene.element(norad_id) is not None and st.session_state.get("orbix_selected") != norad_id:
+                    st.session_state["orbix_selected"] = norad_id
+                    st.rerun()
+                selected = st.session_state["orbix_selected"]
 
-        render_selected(scene, selected)
-        for status in scene.catalog.groups:
-            if not status.ok:
-                st.warning(f"{status.spec.label} could not be loaded. Try Reload scene or saved data.")
-        st.caption(f"Playback: {scene.plan.start:%H:%M}–{scene.plan.end:%H:%M} UTC · Estimated positions")
+            render_selected(scene, selected)
+            for status in scene.catalog.groups:
+                if not status.ok:
+                    st.warning(f"{status.spec.label} could not be loaded. Try Reload scene or saved data.")
+            st.caption(f"Playback: {scene.plan.start:%H:%M}–{scene.plan.end:%H:%M} UTC · Estimated positions")
 
     with analysis_tab:
         render_analysis(scene)
+
+    with chat_panel:
+        render_analyst(cached.analysis_frame(scene), list(st.session_state.get("analysis_groups", groups)), scene, compact=True)
 
     with guide_tab:
         render_user_guide(scene, payload_bytes)

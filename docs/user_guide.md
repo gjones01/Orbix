@@ -1,6 +1,6 @@
 ## Explore the globe
 
-Choose satellite groups in the sidebar. Drag the globe to rotate it, scroll to zoom,
+Choose visible satellite groups in the globe's Constellations panel. Drag the globe to rotate it, scroll to zoom,
 hover to identify a satellite, and click to select it and see its orbit trail.
 Playback starts automatically when the globe first appears. Use **Pause** to stop
 it, or the playback controls to move through the selected time window. **Reload scene**
@@ -52,3 +52,42 @@ outlier diagnostics, correlations, linked orbit map, column provenance and data-
 audit. They use the groups selected in Analysis. Correlations describe associations,
 not causes; undefined values stay missing. Technical source documentation is maintained
 in `docs/technical_decisions.md`, `docs/phase2_interactions.md` and `docs/ai_analyst.md`.
+
+
+### Mission workspace
+
+Use **Constellations** on the globe to show or hide loaded satellites instantly.
+The sidebar's collapsed **Data sources** section controls which catalogues are loaded;
+changing a source creates a new snapshot. Playback window, saved data, and Reload scene
+remain in the sidebar, which can also be collapsed for a wider view.
+
+**Ask Orbix** is beside the globe, or below it on smaller screens. Its conversation panel
+scrolls independently. Open **Conversation tools & ideas** for suggestions and Clear
+conversation. The analyst uses your comparison groups from Analysis and can answer
+questions about the selected satellite. Changing visibility on the globe does not
+change the comparison groups. The robot, history, and User guide evidence remain available.
+
+Glass panels and the loading wireframe are decorative; loading ends when the scene is
+ready. Reduced-motion preferences disable the loader's animation.
+
+
+### Follow a satellite
+
+Select a satellite on the globe and choose **Follow Satellite** above the timeline.
+Use **Distance** to adjust framing, or **Satellite Perspective** to explore the view
+from near its predicted position. Drag the view (or focus the canvas and use arrow keys)
+to look around in Satellite Perspective. Playback, speed, pause, and the timeline still
+work. **Return to Earth** or Escape restores your previous Earth View.
+
+The perspective is simulated from orbital predictions; it is not an onboard camera
+or a model of the satellite's actual orientation. A hidden or unavailable target returns
+you to Earth View automatically. Reduced-motion settings skip the cinematic approach.
+
+
+### Earth lighting
+
+Choose **Cinematic** lighting for the thin atmospheric rim, night lights, and water
+reflections. Use **Basic** for the previous simpler appearance or smoother interaction
+on a slower device. Lighting follows the playback timestamp. Earth textures are static
+composites: the night lights show NASA's 2016 map, not live imagery or current outages.
+The atmospheric glow and reflections are visual approximations, not scientific forecasts.
