@@ -44,7 +44,7 @@ __all__ = [
 #: (now, when the scene is loaded) and runs forward: Orbix plays orbital predictions,
 #: it never rewinds behind the load instant. Long enough to see motion in every orbit
 #: type, short enough that keyframe sampling can stay fine.
-DEFAULT_WINDOW_MINUTES = 20.0
+DEFAULT_WINDOW_MINUTES = 90.0
 
 #: Refuse to propagate elements this far from the simulation window: SGP4 stays
 #: numerically stable, but the accuracy is long gone. Reported, never silent.

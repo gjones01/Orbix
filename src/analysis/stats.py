@@ -212,20 +212,6 @@ def outliers(
     distribution is unimodal; the modified z-score uses the median and MAD, tolerates
     skew, but is undefined when MAD is zero. An object is flagged if *either* criterion
     fires, and ``reason`` records which.
-
-    **Flags never remove rows.** The frame is untouched; ``flagged`` is a separate table of
-    observations with the rule that fired, so the caller can display, filter or ignore it.
-    A flag is a prompt to look, not a verdict.
-
-    **A high flag rate indicts the group, not the objects.** When more than
-    ``heterogeneous_pct`` per cent of a group is flagged, ``heterogeneous`` is set and the
-    note says the group is probably multi-modal: the weather group mixes LEO and GEO
-    platforms, Starlink occupies discrete shells, and in both cases the "outliers" are a
-    legitimate orbital population. The threshold is passed in as a configurable heuristic
-    precisely because it is not a statistical law - stratify the group instead
-    (:func:`add_stratum`) and look at the distribution.
-
-    Returns
     -------
     (summary, flagged)
         ``summary``: one row per group with fences, counts, ``outlier_pct`` and flags.

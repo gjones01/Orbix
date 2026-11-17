@@ -88,7 +88,7 @@ def main():
                 before = globe("return window.__orbix.state.lastAnalysisAction;") or 0
                 click(key)
                 wait.until(lambda d: (globe("return window.__orbix.state.lastAnalysisAction;") or 0) > before)
-                tab("Globe")
+                assert_globe_navigation()
                 wait.until(lambda d: globe("return !document.getElementById('selection-marker').hidden;"))
                 result = probe()
                 assert result["visible"] == 1 and result["labelled"]
@@ -97,7 +97,28 @@ def main():
                 assert str(result["id"]) in result["label"] and result["paths"] == 2
                 if expected is not None:
                     assert result["id"] == expected
+                # Return immediately, with a real click and no preparatory scroll.
+                # Deferred programmatic focus must not pull us back to Globe.
+                analysis = driver.find_element(By.XPATH,
+                    "//button[@role='tab' and normalize-space(.)='Analysis']")
+                analysis.click()
+                for _ in range(10):
+                    time.sleep(.1)
+                    assert analysis.get_attribute("aria-selected") == "true"
+                tab("Globe")
+                wait.until(lambda d: globe("return document.querySelector('canvas').clientWidth > 500;"))
+                time.sleep(.5)
                 return result
+
+            def assert_globe_navigation():
+                wait.until(lambda d: d.find_element(By.XPATH,
+                    "//button[@role='tab' and normalize-space(.)='Globe']").get_attribute("aria-selected") == "true")
+                wait.until(lambda d: d.execute_script("""
+                    const tab = [...document.querySelectorAll('button[role="tab"]')]
+                        .find(t => t.textContent.trim() === 'Globe');
+                    const rect = tab.getBoundingClientRect();
+                    return rect.top >= 0 && rect.bottom < window.innerHeight;
+                """))
 
             # Fresh session: no prior globe click to prime the bridge.
             tab("Analysis")
@@ -121,6 +142,7 @@ def main():
             tab("Analysis")
             click_element(driver.find_element(By.XPATH, "//label[normalize-space(.)='mi']"))
             wait.until(lambda d: "mi" in d.find_element(By.CSS_SELECTOR, ".ox-analysis-metrics").text)
+            assert driver.find_element(By.XPATH, "//button[@role='tab' and normalize-space(.)='Analysis']").get_attribute("aria-selected") == "true"
             tab("Globe")
             view = probe()["camera"]
             assert abs(view["lat"] - 17) < .01 and abs(view["lng"] - 30) < .01
@@ -132,11 +154,17 @@ def main():
             wait.until(lambda d: d.find_element(By.CSS_SELECTOR, ".st-key-analysis_unusual_view button").is_displayed())
             choice = driver.find_element(By.CSS_SELECTOR, ".st-key-analysis_unusual_satellite").text
             report["unusual"] = select("analysis_unusual_view", int(re.search(r"NORAD (\d+)", choice).group(1)))
-            tab("Analysis")
-            click_element(driver.find_element(By.XPATH, "//summary[contains(.,'Explore individual satellites')]"))
-            wait.until(lambda d: d.find_element(By.CSS_SELECTOR, ".st-key-analysis_satellite_view button").is_displayed())
-            choice = driver.find_element(By.CSS_SELECTOR, ".st-key-analysis_satellite").text
-            report["individual"] = select("analysis_satellite_view", int(re.search(r"NORAD (\d+)", choice).group(1)))
+            tab("Globe")
+            search = driver.find_element(By.CSS_SELECTOR, ".st-key-analysis_satellite input")
+            click_element(search)
+            search.send_keys("25544")
+            option = wait.until(lambda d: d.find_element(By.XPATH, "//*[@role='option' and contains(.,'25544')]"))
+            option.click()
+            report["individual"] = select("analysis_satellite_view", 25544)
+            search = driver.find_element(By.CSS_SELECTOR, ".st-key-analysis_satellite input")
+            click_element(search)
+            search.send_keys("ISS")
+            wait.until(lambda d: d.find_element(By.XPATH, "//*[@role='option' and contains(.,'25544')]" )).click()
 
             # An Analysis action during playback keeps the existing scene running.
             globe("window.__orbix.setPlaying(true);")
@@ -152,7 +180,7 @@ def main():
             before = probe()["action"]
             click("analysis_discovery_group")
             wait.until(lambda d: globe("return window.__orbix.state.lastAnalysisAction;") > before)
-            tab("Globe")
+            assert_globe_navigation()
             group = globe("""
                 const o=window.__orbix;
                 return {enabled:[...o.state.enabledGroups], count:o.highlightCount,
@@ -160,6 +188,10 @@ def main():
             """)
             assert "weather" in group["enabled"] and group["count"] == group["shown"] > 0
             report["group_discovery"] = group
+            frame = next(f for f in driver.find_elements(By.TAG_NAME, "iframe")
+                         if "orbix_globe" in (f.get_attribute("src") or ""))
+            assert frame.rect["width"] > 500
+            driver.save_screenshot(str(ROOT / "docs/screenshots/selection-globe.png"))
             print(json.dumps(report, indent=2))
             print("PASS: real tab switches, visible labels, hidden groups, repeat selections and playback")
         finally:

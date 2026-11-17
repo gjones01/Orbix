@@ -298,7 +298,7 @@ def test_window_anchor_defaults_to_now():
 
     assert before - timedelta(seconds=5) <= scene.plan.start <= after + timedelta(seconds=5)
     assert scene.plan.end - scene.plan.start == pytest.approx(
-        timedelta(minutes=20), abs=timedelta(seconds=1)
+        timedelta(minutes=90), abs=timedelta(seconds=1)
     )
 
 

@@ -89,7 +89,7 @@ import { createEarthEffects } from './earth-effects.js';
     selection: null,        // selected *index* into metadata
     selectedId: null,       // selected NORAD id
     playing: false,
-    speed: 60,              // simulation seconds per real second
+    speed: 30,              // simulation seconds per real second
     tNorm: 0,               // 0..1 across the window
     clockMs: 0,
     frameStats: { frames: 0, fps: 0, updateMs: 0, startedAt: 0 },
@@ -570,9 +570,37 @@ import { createEarthEffects } from './earth-effects.js';
     marker.hidden = false;
   }
 
+  function revealGlobeTab(revision) {
+    // Streamlit 1.50 tabs have no programmatic selection API. The component is
+    // served on the app's origin, so scope navigation to its containing tab set.
+    try {
+      const tabs = window.frameElement?.closest('[data-testid="stTabs"]');
+      const button = tabs && [...tabs.querySelectorAll('button[role="tab"]')]
+        .find(tab => tab.textContent.trim() === 'Globe');
+      if (!button) return;
+      // Keep the navigation acknowledgement in the parent, outside the iframe's
+      // lifetime. Remounting a component must not replay an old navigation intent.
+      if (tabs.dataset.orbixNavigationRevision === String(revision)) return;
+      tabs.dataset.orbixNavigationRevision = String(revision);
+      button.click();
+      window.parent.requestAnimationFrame(() => {
+        // Do not focus the tab: deferred focus can reactivate Globe after the
+        // user clicks Analysis (the tab library activates tabs on focus).
+        if (button.getAttribute('aria-selected') !== 'true') return;
+        // The transparent Streamlit header still intercepts pointer events.
+        // Keep the tab row below it instead of scrolling underneath it.
+        const header = window.parent.document.querySelector('[data-testid="stHeader"]');
+        const inset = Math.max(0, header?.getBoundingClientRect().bottom || 0) + 12;
+        button.style.scrollMarginTop = `${inset}px`;
+        button.scrollIntoView({block: 'start', behavior: 'instant'});
+      });
+    } catch (_) { /* Standalone previews have no parent app navigation. */ }
+  }
+
   function applyAnalysisAction(action) {
     if (!action || action.revision === state.lastAnalysisAction) return;
     state.lastAnalysisAction = action.revision;
+    revealGlobeTab(action.revision);
     if (tracking) tracking.returnEarth(true);
     const wanted = new Set((action.ids || []).map(Number));
     const indices = [];
@@ -821,7 +849,7 @@ import { createEarthEffects } from './earth-effects.js';
 
     const speed = document.getElementById('speed-select');
     if (speed) {
-      speed.addEventListener('change', () => { state.speed = Number(speed.value) || 60; });
+      speed.addEventListener('change', () => { state.speed = Number(speed.value) || 30; });
     }
 
     const slider = document.getElementById('time-slider');

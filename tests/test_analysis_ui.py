@@ -84,6 +84,21 @@ def test_discovery_and_unusual_satellites_share_globe_selection(app):
     assert any("No unusual satellites match" in item.value for item in app.info)
 
 
+def test_globe_search_uses_loaded_catalogue_not_analysis_filter(app):
+    assert app.selectbox(key="analysis_satellite").value is None
+    assert app.button(key="analysis_satellite_view").disabled
+    app.multiselect(key="analysis_groups").set_value(["gps-ops"]).run()
+    app.selectbox(key="analysis_satellite").set_value(25544).run()
+    app.button(key="analysis_satellite_view").click().run()
+    assert not app.exception
+    assert app.session_state["orbix_selected"] == 25544
+    assert app.session_state["analysis_globe_action"]["ids"] == [25544]
+    app.checkbox(key="group_stations").uncheck().run()
+    assert not app.exception
+    assert app.selectbox(key="analysis_satellite").value is None
+    assert app.button(key="analysis_satellite_view").disabled
+
+
 def test_missing_position_cannot_be_selected(app, monkeypatch):
     from src.ui import analysis_cache
     frame = app.session_state["orbix_analysis_frame"]["frame"].copy()
@@ -170,7 +185,9 @@ def test_large_unusual_results_are_paged_and_group_search_is_scoped(app):
 def test_technical_reference_is_separate_from_exploration(app):
     assert [tab.label for tab in app.tabs] == ["Globe", "Analysis", "User guide"]
     analysis_expanders = {e.label for e in app.tabs[1].expander}
-    assert analysis_expanders == {"Explore unusual satellites", "Explore individual satellites"}
+    assert analysis_expanders == {"Explore unusual satellites"}
+    assert any(s.label == "Find a satellite" for s in app.tabs[0].selectbox)
+    assert not any(s.key == "analysis_satellite" for s in app.tabs[1].selectbox)
     guide_expanders = {e.label for e in app.tabs[2].expander}
     assert "Correlation analysis" in guide_expanders
     assert "AI answer evidence & request details" in guide_expanders

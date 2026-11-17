@@ -27,7 +27,7 @@ from src.ui.loading import (
     clear_scene_cache,
     load_constellation_cached,
 )
-from src.ui.analysis_tab import render_analysis
+from src.ui.analysis_tab import render_analysis, render_satellite_search
 from src.ui.user_guide import render_user_guide
 from src.ui.panels import render_error, render_selected
 from src.ui.presentation import ConstellationScene, default_groups, resize_playback
@@ -107,7 +107,7 @@ def render_sidebar() -> tuple[tuple[str, ...], float, bool, bool]:
         window_label = st.selectbox(
             "Window width",
             list(WINDOW_CHOICES),
-            index=1,
+            index=3,
             label_visibility="collapsed",
             help="How far ahead you can play the simulation.",
         )
@@ -208,6 +208,7 @@ def main() -> None:
         with assistant:
             chat_panel = st.container(height=GLOBE_HEIGHT, border=True, key="mission_chat")
         with mission:
+            render_satellite_search(scene)
             event = globe_component(payload, height=GLOBE_HEIGHT, key=COMPONENT_KEY)
             if (event and event.get("event") == "select"
                     and event != st.session_state.get("orbix_last_event")):

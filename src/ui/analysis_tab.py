@@ -339,8 +339,8 @@ def _select_satellite(frame: pd.DataFrame, norad_id: int) -> None:
     st.session_state["orbix_selected"] = int(norad_id)
     st.session_state["analysis_notice_id"] = int(norad_id)
     st.session_state["analysis_globe_notice"] = (
-        f"{row['name']} (NORAD {norad_id}) is selected. Open the Globe tab at the top "
-        "to see its labelled marker, information panel and orbit trail. The view is centred on this satellite."
+        f"{row['name']} (NORAD {norad_id}) is selected on the Globe, "
+        "with its labelled marker, information panel and orbit trail."
     )
     _globe_action("select", [int(norad_id)])
     # Keep the existing many-object highlight channel; single-object selection
@@ -474,7 +474,7 @@ def _unusual_explorer(frame: pd.DataFrame, summary: dict, labels: dict[str, str]
                                  format_func=lambda n: f"{names[n]} · NORAD {n}", key="analysis_unusual_satellite")
         if st.button("View on Globe", key="analysis_unusual_view"):
             _select_satellite(frame, int(satellite))
-        st.caption("Select a satellite, then open Globe to see it.")
+        st.caption("View on Globe opens the selected satellite and its orbit trail.")
 
 
 def _discoveries(frame: pd.DataFrame, summary: dict, labels: dict[str, str], unit: str) -> None:
@@ -495,22 +495,33 @@ def _discoveries(frame: pd.DataFrame, summary: dict, labels: dict[str, str], uni
             if st.button("Investigate unusual satellites", key="analysis_investigate_button"):
                 st.session_state["analysis_investigate"] = True
     _unusual_explorer(frame, summary, labels, unit)
-    with st.expander("Explore individual satellites"):
-        names = frame.set_index("norad_id")["name"].to_dict()
-        selected = st.selectbox("Satellite", frame["norad_id"].tolist(),
-                                format_func=lambda n: f"{names[n]} · NORAD {n}", key="analysis_satellite")
-        row = frame.loc[frame["norad_id"] == selected].iloc[0]
-        available = pd.notna(row["altitude_km"])
-        if available:
-            factor = 1 if unit == "km" else 1 / KM_PER_MILE
-            st.write(f"Estimated height: **{row['altitude_km'] * factor:,.0f} {unit}** · "
-                     f"Orbit tilt: **{row['inclination_deg']:.1f}°**")
-        else:
-            st.info("No position estimate is available for this satellite at the snapshot time. "
-                    "Choose another satellite to view on Globe.")
-        if st.button("View on Globe", key="analysis_satellite_view", disabled=not available):
+
+
+def render_satellite_search(scene: ConstellationScene) -> None:
+    """Search the entire loaded catalogue from the main globe view."""
+    frame = cached.analysis_frame(scene)
+    names = frame.set_index("norad_id")["name"].to_dict()
+    choices = frame["norad_id"].tolist()
+    if st.session_state.get("analysis_satellite") not in choices:
+        st.session_state["analysis_satellite"] = None
+    search, action = st.columns([4, 1], vertical_alignment="bottom")
+    with search:
+        selected = st.selectbox(
+            "Find a satellite", choices, index=None,
+            format_func=lambda n: f"{names[n]} · NORAD {n}",
+            placeholder="Type a satellite name or NORAD ID...",
+            key="analysis_satellite",
+        )
+    available = selected is not None and pd.notna(
+        frame.loc[frame["norad_id"] == selected, "altitude_km"].iloc[0]
+    )
+    with action:
+        if st.button("View on Globe", key="analysis_satellite_view", disabled=not available,
+                     use_container_width=True):
             _select_satellite(frame, int(selected))
-        st.caption("Select here, then open the Globe tab at the top to see its information panel and orbit trail.")
+    if selected is not None and not available:
+        st.info("No position estimate is available for this satellite at the snapshot time. "
+                "Choose another satellite to view on Globe.")
 
 
 def render_analysis(scene: ConstellationScene) -> list[int]:
