@@ -30,7 +30,7 @@ from src.ui.loading import (
 from src.ui.analysis_tab import render_analysis
 from src.ui.user_guide import render_user_guide
 from src.ui.panels import render_error, render_selected
-from src.ui.presentation import ConstellationScene, default_groups
+from src.ui.presentation import ConstellationScene, default_groups, resize_playback
 
 GLOBE_HEIGHT = 720
 COMPONENT_KEY = "orbix_globe"
@@ -148,7 +148,7 @@ def main() -> None:
 
     try:
         with st.spinner("Loading catalogue and propagating the constellation..."):
-            scope = (groups, window_minutes, offline, force_refresh)
+            scope = (groups, offline, force_refresh)
             saved = st.session_state.get("orbix_loaded_scene")
             # Pin the user's snapshot across interactions, including after the shared
             # five-minute cache expires. Reload scene or a data-scope change replaces it.
@@ -157,6 +157,8 @@ def main() -> None:
                     groups, window_minutes, offline, force_refresh, None
                 )}
                 st.session_state["orbix_loaded_scene"] = saved
+            elif saved["scene"].plan.duration_seconds != window_minutes * 60:
+                saved["scene"] = resize_playback(saved["scene"], window_minutes)
             scene = saved["scene"]
     except Exception as exc:  # noqa: BLE001 - surfaced to the user verbatim
         st.session_state.pop("orbix_scene_signature", None)

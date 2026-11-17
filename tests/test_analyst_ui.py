@@ -52,6 +52,38 @@ def test_explicit_requests_only_filter_history_clear_and_scene_reset(app, monkey
     assert any("snapshot changed" in i.value for i in app.info)
 
 
+def test_playback_window_preserves_snapshot_and_conversation(app, monkeypatch):
+    from src.analyst.context import snapshot_id
+    from src.analysis.frame import catalog_frame
+    from src.ui import presentation
+
+    post = Mock(return_value=response())
+    monkeypatch.setattr(provider.requests, "post", post)
+    app.button(key="analyst_patterns").click().run()
+    original = app.session_state["orbix_loaded_scene"]["scene"]
+    original_id = snapshot_id(catalog_frame(original))
+    turns = list(app.session_state["orbix_analyst"]["turns"])
+    signature = app.session_state["orbix_scene_signature"]
+    # Playback must work even when fetching a catalogue is unavailable.
+    monkeypatch.setattr(presentation, "load_catalog", Mock(side_effect=AssertionError("Unexpected fetch")))
+    for label, minutes in [("45 minutes", 45), ("90 minutes (one ISS orbit)", 90),
+                           ("10 minutes", 10), ("20 minutes", 20)]:
+        window = next(s for s in app.selectbox if s.label == "Window width")
+        window.set_value(label).run()
+        assert not app.exception
+        scene = app.session_state["orbix_loaded_scene"]["scene"]
+        assert scene.catalog is original.catalog
+        assert scene.plan.start == original.plan.start
+        assert scene.plan.duration_seconds == minutes * 60
+        assert scene.sample.times[-1] == scene.plan.end
+        assert snapshot_id(catalog_frame(scene)) == original_id
+        assert app.session_state["orbix_analyst"]["turns"] == turns
+        assert not any("snapshot changed" in i.value for i in app.info)
+        assert app.session_state["orbix_scene_signature"] != signature
+        signature = app.session_state["orbix_scene_signature"]
+        assert post.call_count == 1
+
+
 def test_missing_configuration_and_error_recovery(app, monkeypatch):
     post = Mock(return_value=response(status=429))
     monkeypatch.setattr(provider.requests, "post", post)

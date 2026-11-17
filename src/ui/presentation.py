@@ -37,6 +37,7 @@ __all__ = [
     "ConstellationScene",
     "default_groups",
     "load_constellation",
+    "resize_playback",
 ]
 
 #: Playback window length in minutes. The window starts at the scene's anchor time
@@ -176,6 +177,31 @@ class ConstellationScene:
         return f"{self.unique_count} unique satellites ({statuses})"
 
 
+def resize_playback(scene: ConstellationScene, window_minutes: float) -> ConstellationScene:
+    """Resample playback without fetching data or changing the snapshot anchor.
+
+    Keep the catalogue intact so analysis and conversation evidence remain valid.
+    Refuse extensions beyond the existing element-age safety limit.
+    """
+    start = scene.plan.start
+    end = start + timedelta(minutes=max(1.0, window_minutes))
+    satellites = sorted(scene.catalog.satellites.values(), key=lambda s: s.norad_id)
+    if any(max(abs(start - s.element.epoch), abs(end - s.element.epoch))
+           > MAX_ELEMENT_AGE for s in satellites):
+        raise ValueError("This playback window exceeds the 30-day orbit-data age limit. "
+                         "Choose a shorter window or reload with updated data.")
+    plan, sample = _sample_window(satellites, start, end)
+    return ConstellationScene(scene.catalog, sample, plan, scene.skipped_stale)
+
+
+def _sample_window(satellites: list[Satellite], start: datetime, end: datetime):
+    propagator = BatchPropagator([sat.element for sat in satellites])
+    plan = plan_window(start, end, len(satellites))
+    times = [start + timedelta(seconds=plan.interval_seconds * index)
+             for index in range(plan.keyframes)]
+    return plan, propagator.sample(times)
+
+
 def load_constellation(
     group_ids: Iterable[str] | None = None,
     *,
@@ -241,13 +267,7 @@ def load_constellation(
             retrieved_at=catalog.retrieved_at,
         )
 
-    propagator = BatchPropagator([sat.element for sat in usable])
-    plan = plan_window(start, end, len(usable))
-    times = [
-        start + timedelta(seconds=plan.interval_seconds * index)
-        for index in range(plan.keyframes)
-    ]
-    sample = propagator.sample(times)
+    plan, sample = _sample_window(usable, start, end)
 
     return ConstellationScene(
         catalog=catalog,

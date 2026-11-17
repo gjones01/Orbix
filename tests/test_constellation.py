@@ -344,6 +344,12 @@ def test_stale_guard_uses_the_far_end_of_the_window(monkeypatch):
     )
     assert short.skipped_stale == ()
     assert 11111 in short.catalog.satellites
+    from src.ui.presentation import resize_playback
+
+    with pytest.raises(ValueError, match="30-day orbit-data age limit"):
+        resize_playback(short, 20)
+    assert short.plan.duration_seconds == 5 * 60
+    assert 11111 in short.catalog.satellites
 
 
 
